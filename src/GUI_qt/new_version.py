@@ -51,7 +51,7 @@ class NewVersion():
 
     def open_website(self):
         version = get_last_version()
-        webbrowser.open(f'https://github.com/Lyem/pyneko/releases/tag/v{version}')
+        webbrowser.open(f'https://github.com/RochaSWallace/pyteste/releases/tag/v{version}')
         self.msg_box.close()
     
     def close_application(self):

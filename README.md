@@ -1,4 +1,4 @@
-# Pyneko  
+# PyTeste  
 <div align="center">
   <a href="https://github.com/Lyem/Pyneko">
     <img width="450" src="https://i.imgur.com/RWMFT6o.png" />

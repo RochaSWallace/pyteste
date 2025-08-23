@@ -6,11 +6,11 @@ from GUI_qt.config import get_config
 from platformdirs import user_data_path
 from core.providers.domain.provider_repository import ProviderRepository
 
-data_path = user_data_path('pyneko')
+data_path = user_data_path('pyteste')
 
 def base_path():
-    if os.environ.get('PYNEKOENV') != 'dev':
-        return data_path / 'pyneko' / 'src'
+    if os.environ.get('PYTESTEENV') != 'dev':
+        return data_path / 'pyteste' / 'src'
 
     return Path('.') / 'src'
 

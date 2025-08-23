@@ -4,7 +4,7 @@ from pathlib import Path
 from platformdirs import user_config_dir
 from dataclasses import dataclass, asdict
 
-config_path = user_config_dir('pyneko')
+config_path = user_config_dir('pyteste')
 db_path = Path(config_path) / 'ui.db'
 makedirs(config_path, exist_ok=True)
 

@@ -38,11 +38,11 @@ jobs:
 
       - name: Rename build app for Windows
         if: ${{ matrix.config.os == 'windows-2019' }}
-        run: mv ./dist/__init__.exe ./dist/Pyneko.exe
+        run: mv ./dist/__init__.exe ./dist/Pyteste.exe
 
       - name: Rename build app for Ubuntu
         if: ${{ matrix.config.os == 'ubuntu-22.04' }}
-        run: mv ./dist/__init__ ./dist/Pyneko
+        run: mv ./dist/__init__ ./dist/Pyteste
 
       - name: Move build directory
         run: mv ./dist ./dist-${{ matrix.config.os }}
@@ -50,7 +50,7 @@ jobs:
       - name: Upload result job ${{ matrix.config.os }}
         uses: actions/upload-artifact@v4
         with:
-          name: pyneko-pyinstaller-artifact-${{ matrix.config.os }}
+          name: pyteste-pyinstaller-artifact-${{ matrix.config.os }}
           path: ./dist-${{ matrix.config.os }}
 
   release:
@@ -71,5 +71,5 @@ jobs:
           draft: false
           prerelease: false
           files: |
-            pyneko-pyinstaller-artifact-windows-2019/Pyneko.exe
-            pyneko-pyinstaller-artifact-ubuntu-22.04/Pyneko
+            pyteste-pyinstaller-artifact-windows-2019/Pyteste.exe
+            pyteste-pyinstaller-artifact-ubuntu-22.04/Pyteste
