@@ -5,7 +5,7 @@ from platformdirs import user_config_dir
 from dataclasses import dataclass, asdict
 import json
 
-data_path = user_config_dir('pyneko')
+data_path = user_config_dir('pyteste')
 db_path = Path(data_path) / 'login.db'
 makedirs(data_path, exist_ok=True)
 

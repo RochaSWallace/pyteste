@@ -57,13 +57,13 @@ class SmartStitch():
             imgs = img_manipulator.slice(combined_img, slice_points)
             for img in imgs:
                 filename=img_handler.save(
-                    str(Path.joinpath(Path(tempfile.gettempdir()), 'pyneko', Path(ch.files[0]).parent.parent.name, f'{sanitize_folder_name(ch.number)} [stitched]')),
+                    str(Path.joinpath(Path(tempfile.gettempdir()), 'pyteste', Path(ch.files[0]).parent.parent.name, f'{sanitize_folder_name(ch.number)} [stitched]')),
                     img,
                     img_iteration,
                     img_format=conf.img,
                     quality=100,
                 )
-                files.append(str(Path.joinpath(Path(tempfile.gettempdir()), 'pyneko', Path(ch.files[0]).parent.parent.name, f'{sanitize_folder_name(ch.number)} [stitched]', filename)))
+                files.append(str(Path.joinpath(Path(tempfile.gettempdir()), 'pyteste', Path(ch.files[0]).parent.parent.name, f'{sanitize_folder_name(ch.number)} [stitched]', filename)))
                 img_iteration += 1
 
             if fn != None:
@@ -98,7 +98,7 @@ class SmartStitch():
             files.append(str(Path.joinpath(Path(path), filename)))
             img_iteration += 1
         
-        shutil.rmtree(Path.joinpath(Path(tempfile.gettempdir()), 'pyneko', Path(ch.files[0]).parent.parent.name, f'{sanitize_folder_name(ch.number)} [stitched]'))
+        shutil.rmtree(Path.joinpath(Path(tempfile.gettempdir()), 'pyteste', Path(ch.files[0]).parent.parent.name, f'{sanitize_folder_name(ch.number)} [stitched]'))
 
         gc.collect()
 

@@ -114,7 +114,7 @@ class UpdateThread(QThread):
 
     def run(self):
         init()
-        if os.environ.get('PYNEKOENV') != 'dev':
+        if os.environ.get('PYTESTEENV') != 'dev':
             update_providers()
             if version != get_last_version():
                 NewVersion()
@@ -232,7 +232,7 @@ class MangaDownloaderApp:
 
         self.init_log = False
 
-        if not conf.log and os.environ.get('PYNEKOENV') != 'dev':
+        if not conf.log and os.environ.get('PYTESTEENV') != 'dev':
             self.window.logs.hide()
         else:
             self.init_log = True
@@ -399,7 +399,7 @@ class MangaDownloaderApp:
 
     def set_title(self, manga: Manga):
         self.manga_id_selectd = manga.id
-        self.window.setWindowTitle(f'PyNeko | {manga.name} | {self.provider_selected.name}')
+        self.window.setWindowTitle(f'PyTeste | {manga.name} | {self.provider_selected.name}')
         chapter_task = ChaptersTask(self.provider_selected, manga.id)
         chapter_task.signal.finished.connect(self.set_chapter)
         chapter_task.signal.error.connect(self._manga_by_link_error)
@@ -736,7 +736,7 @@ class MangaDownloaderApp:
 if __name__ == "__main__":
     try:
 
-        if os.environ.get('PYNEKOENV') == 'dev':
+        if os.environ.get('PYTESTEENV') == 'dev':
             from jurigged import watch
             watch(str(base_path()))
 
