@@ -116,7 +116,7 @@ class UpdateThread(QThread):
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
             update_providers()
-            if version != get_last_version():
+            if version == get_last_version(): # voltar para !=
                 NewVersion()
         self.finished.emit()
 
@@ -746,17 +746,17 @@ if __name__ == "__main__":
         except:
             pass
 
-        #update = QApplication(sys.argv)
+        update = QApplication(sys.argv)
 
-        #loading_window = LoadingWindow()
-        #loading_window.show()
+        loading_window = LoadingWindow()
+        loading_window.show()
 
-        #update_thread = UpdateThread()
-        #update_thread.finished.connect(loading_window.close)
+        update_thread = UpdateThread()
+        update_thread.finished.connect(loading_window.close)
 
-        #update_thread.start()
+        update_thread.start()
 
-        #update.exec()
+        update.exec()
 
         MangaDownloaderApp().run()
     except Exception as e:
