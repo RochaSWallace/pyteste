@@ -7,7 +7,8 @@ class ArgosComicProvider(WordPressMadara):
 
     def __init__(self):
         self.url = 'https://argoscomic.com/'
-
+        self.link = 'https://argoscomic.com/'
+        
         self.path = ''
         
         self.query_mangas = 'div.post-title h3 a, div.post-title h5 a'
