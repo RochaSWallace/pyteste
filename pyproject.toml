@@ -23,6 +23,7 @@ cloudscraper = "^1.2.71"
 opencv-python-headless = "^4.10.0.84"
 cryptography = "^43.0.3"
 cairosvg = "^2.7.1"
+selenium = "^4.35.0"
 
 [tool.poetry.group.dev.dependencies]
 pytest = "^8.2.1"
