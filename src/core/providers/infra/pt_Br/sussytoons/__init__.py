@@ -8,6 +8,7 @@ from core.__seedwork.infra.http import Http
 from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
 import json
+import requests
 
 class NewSussyToonsProvider(Base):
     name = 'New Sussy Toons'
@@ -21,6 +22,15 @@ class NewSussyToonsProvider(Base):
         self.oldCDN = 'https://oldi.sussytoons.site/scans/1/obras'
         self.webBase = 'https://www.sussytoons.wtf'
         self.cookies = [{'sussytoons-terms-accepted', 'true'}]
+        self.headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'application/json, text/plain, */*',
+            'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Origin': 'https://www.sussytoons.wtf',
+            'Referer': 'https://www.sussytoons.wtf/'
+        }
     
     def getManga(self, link: str) -> Manga:
         match = re.search(r'/obra/(\d+)', link)
@@ -110,35 +120,58 @@ class NewSussyToonsProvider(Base):
     
     def getPages(self, ch: Chapter) -> Pages:
         images = []
-        base_delay = 25  
-        max_delay = 300 
+        base_delay = 1
+        max_delay = 30
         max_attempts = 5 
         attempt = 0
+        
+        try:
+            response = requests.get(f"{self.base}/capitulos/{ch.id[1]}", headers=self.headers, timeout=30)
+            response.raise_for_status()
 
-        while attempt < max_attempts:
-            try:
-                current_delay = min(base_delay * math.pow(2, attempt), max_delay)
-                
-                print(f"Attempt {attempt + 1} - Using {current_delay} seconds delay")
-                
-                html = self.get_Pages(
-                    id=f'{self.webBase}/capitulo/{ch.id[1]}',
-                    sleep=current_delay,
-                    background=attempt > 1 
-                )
-                
-                soup = BeautifulSoup(html, 'html.parser')
-                images = [img.get('src') for img in soup.select('img.chakra-image.css-8atqhb')]
-                
-                if images:
-                    print("Successfully fetched images")
-                    break
-                else:
-                    print("No images found, retrying...")
+            resultado = response.json()['resultado']
+            print(resultado)
 
-            except Exception as e:
-                print(f"Attempt {attempt + 1} failed: {str(e)}")
-            
-            attempt += 1
+            def clean_path(p):
+                return p.strip('/')
 
-        return Pages(ch.id, ch.number, ch.name, images)
+            images = []
+            for pagina in resultado['cap_paginas']:
+                print(pagina)
+                mime = pagina.get('mime')
+                if mime is not None:
+                    raise Exception(f"Mime diferente de None: {mime}")
+                path = clean_path(pagina.get('path', ''))
+                src = clean_path(pagina.get('src', ''))
+                full_url = f"{self.CDN}/{path}/{src}"
+                images.append(full_url)
+
+            return Pages(ch.id, ch.number, ch.name, images)
+        except Exception:
+            while attempt < max_attempts:
+                try:
+                    current_delay = min(base_delay * math.pow(2, attempt), max_delay)
+                    
+                    print(f"Attempt {attempt + 1} - Using {current_delay} seconds delay")
+                    
+                    html = self.get_Pages(
+                        id=f'{self.webBase}/capitulo/{ch.id[1]}',
+                        sleep=current_delay,
+                        background=attempt > 1 
+                    )
+                    
+                    soup = BeautifulSoup(html, 'html.parser')
+                    images = [img.get('src') for img in soup.select('img.chakra-image.css-8atqhb')]
+                    
+                    if images:
+                        print("Successfully fetched images")
+                        break
+                    else:
+                        print("No images found, retrying...")
+
+                except Exception as e:
+                    print(f"Attempt {attempt + 1} failed: {str(e)}")
+                
+                attempt += 1
+
+            return Pages(ch.id, ch.number, ch.name, images)
