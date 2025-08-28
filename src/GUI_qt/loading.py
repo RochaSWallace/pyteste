@@ -18,7 +18,7 @@ assets = os.path.join(current_dir, 'assets')
 class LoadingWindow(QWidget):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("PyTeste")
+        self.setWindowTitle("PyPiece")
         self.setFixedSize(300, 100)
         self.setWindowIcon(QIcon(os.path.join(assets, 'icon.ico')))
 

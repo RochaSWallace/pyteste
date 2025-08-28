@@ -399,7 +399,7 @@ class MangaDownloaderApp:
 
     def set_title(self, manga: Manga):
         self.manga_id_selectd = manga.id
-        self.window.setWindowTitle(f'PyTeste | {manga.name} | {self.provider_selected.name}')
+        self.window.setWindowTitle(f'PyPiece | {manga.name} | {self.provider_selected.name}')
         chapter_task = ChaptersTask(self.provider_selected, manga.id)
         chapter_task.signal.finished.connect(self.set_chapter)
         chapter_task.signal.error.connect(self._manga_by_link_error)

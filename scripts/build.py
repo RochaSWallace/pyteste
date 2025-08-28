@@ -30,6 +30,7 @@ args = [
     '--collect-all=cairosvg',
     '--collect-all=pillow_avif',
     '--collect-all=selenium',
+    '--collect-all=undetected_chromedriver',
     f'--icon=assets/icon.ico',
     '--exclude-module=tests',
     f'--add-data=src/core/providers/infra{separator}core/providers/infra',
