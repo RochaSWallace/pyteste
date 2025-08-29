@@ -10,7 +10,7 @@ class YugenProvider(Base):
     domain = [re.compile(r'\byugenmangasbr\.[^\s/]+(?:\.[^\s/]+)*\b')]
 
     def __init__(self) -> None:
-        self.base = 'https://yugenmangasbr.yocat.xyz/'
+        self.base = 'https://yugenmangasbr.lixni.xyz'
         self.cdn = 'https://media.yugenweb.com/'
         self.api = 'https://api.yugenweb.com/'
         self.headers = {'referer': f'{self.base}'}
