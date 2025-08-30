@@ -1,5 +1,6 @@
 from urllib.parse import urljoin
 import re
+from typing import List
 from fake_useragent import UserAgent
 from core.__seedwork.infra.http import Http
 from bs4 import BeautifulSoup
@@ -49,7 +50,35 @@ class ImperiodabritanniaProvider(WordPressMadara):
             raise Exception("Título vazio ou não encontrado")
 
         return Manga(id=link, name=title)
-    
+
+    def getChapters(self, id: str) -> List[Chapter]:
+        uri = urljoin(self.url, id)
+        response = Http.get(uri, timeout=getattr(self, 'timeout', None))
+        soup = BeautifulSoup(response.content, 'html.parser')
+        data = soup.select(self.query_title_for_uri)
+        element = data.pop()
+        title = element['content'].strip() if 'content' in element.attrs else element.text.strip()
+        dom = soup.select('body')[0]
+        data = dom.select(self.query_chapters)
+        placeholder = dom.select_one(self.query_placeholder)
+        if placeholder:
+            try:
+                data = self._get_chapters_ajax(id)
+            except Exception:
+                try:
+                    data = self._get_chapters_ajax_old(placeholder['data-id'])
+                except Exception:
+                    pass
+        chs = []
+        for el in data:
+            ch_id = self.get_root_relative_or_absolute_link(el, uri)
+            ch_number = el.text.strip()
+            ch_name = title
+            chs.append(Chapter(ch_id, ch_number, ch_name))
+
+        chs.reverse()
+        return chs
+
     def getPages(self, ch: Chapter) -> Pages:
         uri = urljoin(self.url, ch.id)
         uri = self._add_query_params(uri, {'style': 'list'})
@@ -67,10 +96,32 @@ class ImperiodabritanniaProvider(WordPressMadara):
         number = re.findall(r'\d+\.?\d*', str(ch.number))[0]
         return Pages(ch.id, number, ch.name, list)
 
-    
+
     def _get_chapters_ajax(self, manga_id):
         uri = urljoin(self.url, f'{manga_id}ajax/chapters/?t=1')
-        response = Http.post(uri, headers={'Cookie': 'visited=true; __stripe_mid=9d947829-11ca-4f5d-a20b-5a3dceabb1a4832f99; __stripe_sid=ce82d506-1c97-4e6a-9029-884358359e1a7797af; lp_678484=https://imperiodabritannia.com/; ezovuuid_678484=1b78a1fe-93a5-4010-4a6f-0ae580e82923; ezoref_678484=imperiodabritannia.com; cf_clearance=miMtdzc7bJyblo.UViiU0qqdCr_EYGLUZlaeOMmooV4-1756462072-1.2.1.1-BNv_y3CBAvw0VAW6pPpzPkoNiOtSXKlvyI2g2wCS4m_CnwmvL8ytHAwYphG1grWzTwi2KA7oughGPt.nFNMZB4b1fdBq5ZxzNh_RcAnuIDcb.RvQk3QPxMc2kk29fzqHi8q4rYPbV99dQlUmswM7YTSX.ovMG33RYQpWAzXQJwD_rsREGIuyKSjsUzvoSOZq8ykF8TmAKTU.ta1.8YuNOWZz2DRfWCI6JyVEnXN7.In7o8loZyXJD_cWmLhX8PLE; ezoictest=stable; ezoab_678484=mod126-c; ezosuibasgeneris-1=62267cc2-0ab5-41ed-4caa-e59ff6ad67d7; ezopvc_678484=3; ezovuuidtime_678484=1756462198; ezds=ffid%3D1%2Cw%3D1680%2Ch%3D1050; ezohw=w%3D1128%2Ch%3D917'})
+        response = Http.post(uri, headers = {
+            "accept": "*/*",
+            "accept-language": "pt-BR,pt;q=0.8",
+            "content-length": "0",
+            "origin": "https://imperiodabritannia.com",
+            "priority": "u=1, i",
+            "referer": "https://imperiodabritannia.com/manga/flagelo-do-homem/",
+            "sec-ch-ua": '"Not;A=Brand";v="99", "Brave";v="139", "Chromium";v="139"',
+            "sec-ch-ua-arch": '"x86"',
+            "sec-ch-ua-bitness": '"64"',
+            "sec-ch-ua-full-version-list": '"Not;A=Brand";v="99.0.0.0", "Brave";v="139.0.0.0", "Chromium";v="139.0.0.0"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-model": '""',
+            "sec-ch-ua-platform": '"Windows"',
+            "sec-ch-ua-platform-version": '"19.0.0"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "sec-gpc": "1",
+            "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36",
+            "x-requested-with": "XMLHttpRequest",
+            "cookie": "__stripe_mid=9d947829-11ca-4f5d-a20b-5a3dceabb1a4832f99; lp_678484=https://imperiodabritannia.com/; ezovuuid_678484=7fd3d193-dc1c-49ba-721c-e81551baab75; ezoref_678484=imperiodabritannia.com; __stripe_sid=c63211ac-04d5-40d9-a7a0-89c66fbca6d2faf392; cf_clearance=BARHNLrKUavDT0.VpN9zcpN7FR5whz4KCPaW1M3hoBw-1756513598-1.2.1.1-JtHHyLsAjiE.6z43rrh_H6yB3bXyt.xmBswvopmc4h.wNxf..39ISZJx058JomhEdVLgsyLvN0qsgZYmfuAh.l_TDOMY30A6jTtBnG0aJfV1GJP45yE0ysYKo3.a1qFM3TOPXBacl8ZEQyNiRiBg0Az3AN.6uZPVYgAYoiwyafAMnHiyNw9_BxxmCOZAJqp6MGenreKK_uIfURwAHUuEwWUAlgAEdTQfQyU4IPfcYy.l_8RXnW.zrtjt4SGoKS17; ezoab_678484=mod126-c; ezosuibasgeneris-1=ee59a4bd-7e89-4362-42f5-4b4af3645b2e; ezoictest=stable; ezopvc_678484=4; ezovuuidtime_678484=1756514126; ezds=ffid%3D1%2Cw%3D1680%2Ch%3D1050; ezohw=w%3D983%2Ch%3D917"
+})
         data = self._fetch_dom(response, self.query_chapters)
         if data:
             return data
