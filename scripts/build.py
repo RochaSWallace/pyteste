@@ -33,6 +33,7 @@ args = [
     '--collect-all=undetected_chromedriver',
     '--collect-all=webdriver_manager',
     '--collect-all=selenium_stealth',
+    '--collect-all=DrissionPage',
     f'--icon=assets/icon.ico',
     '--exclude-module=tests',
     f'--add-data=src/core/providers/infra{separator}core/providers/infra',
