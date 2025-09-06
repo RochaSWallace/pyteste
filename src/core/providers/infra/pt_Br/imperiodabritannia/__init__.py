@@ -119,7 +119,7 @@ class ImperiodabritanniaProvider(WordPressMadara):
                     time.sleep(1)
                 
                 # Aguarda carregamento adicional
-                time.sleep(2)
+                time.sleep(10)
             
             # Captura TODOS os cookies
             all_cookies = []
