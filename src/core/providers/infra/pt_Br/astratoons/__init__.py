@@ -86,11 +86,39 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
         print(f"chegou aqui: {ch}")
         response = Http.get(ch.id)
         soup = BeautifulSoup(response.content, 'html.parser')
-        images = soup.select_one(self.get_div_page)
-        print(images)
-        image = images.select(self.get_pages)
+        
+        images_container = soup.select_one('div.chapter-images-container, div#chapterImagesContainer')
+        
+        if not images_container:
+            images = soup.select_one(self.get_div_page)
+            if images:
+                image = images.select(self.get_pages)
+                list = []
+                for img in image:
+                    list.append(f"{self.url}{img.get('src')}")
+                return Pages(ch.id, ch.number, ch.name, list)
+            else:
+                raise Exception("Container de imagens não encontrado")
+        
+        # Busca pelos elementos canvas com data-src-url
+        canvas_elements = images_container.select('canvas.chapter-image-canvas[data-src-url]')
+        
+        if not canvas_elements:
+            # Fallback: tenta buscar qualquer canvas com data-src-url
+            canvas_elements = soup.select('canvas[data-src-url]')
+        
         list = []
-        for img in image:
-            list.append(f"{self.url}{img.get('src')}")
+        for canvas in canvas_elements:
+            data_src_url = canvas.get('data-src-url')
+            if data_src_url:
+                # Se a URL começar com '/', adiciona o domínio base
+                if data_src_url.startswith('/'):
+                    full_url = f"{self.url.rstrip('/')}{data_src_url}"
+                else:
+                    full_url = data_src_url
+                list.append(full_url)
+        
+        if not list:
+            raise Exception("Nenhuma imagem encontrada nos elementos canvas")
             
         return Pages(ch.id, ch.number, ch.name, list)
