@@ -139,11 +139,12 @@ class NewSussyToonsProvider(Base):
             for pagina in resultado['cap_paginas']:
                 print(pagina)
                 mime = pagina.get('mime')
-                if mime is not None:
-                    raise Exception(f"Mime diferente de None: {mime}")
                 path = clean_path(pagina.get('path', ''))
                 src = clean_path(pagina.get('src', ''))
-                full_url = f"{self.CDN}/{path}/{src}"
+                if mime is not None:
+                    full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
+                else:
+                    full_url = f"{self.CDN}/{path}/{src}"
                 images.append(full_url)
 
             return Pages(ch.id, ch.number, ch.name, images)
