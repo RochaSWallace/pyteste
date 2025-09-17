@@ -1,14 +1,17 @@
 import re
-import math
-import asyncio
-import nodriver as uc
+import requests
+import time
+import random
+import threading
 from typing import List
 from bs4 import BeautifulSoup
-from core.__seedwork.infra.http import Http
 from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
-import json
-import requests
+
+# Rate limiting global para evitar sobrecarga do servidor
+_LAST_REQUEST_TIME = 0
+_REQUEST_LOCK = threading.Lock()
+_MIN_INTERVAL = 0.5  # Mínimo 500ms entre requisições
 
 class NewSussyToonsProvider(Base):
     name = 'New Sussy Toons'
@@ -32,147 +35,129 @@ class NewSussyToonsProvider(Base):
             'Referer': 'https://www.sussytoons.wtf/'
         }
     
-    def getManga(self, link: str) -> Manga:
-        match = re.search(r'/obra/(\d+)', link)
-        id_value = match.group(1)
-        response = Http.get(f'{self.base}/obras/{id_value}').json()
-        title = response['resultado']['obr_nome']
-        return Manga(link, title)
-
-    def getChapters(self, id: str) -> List[Chapter]:
-        try:
-            match = re.search(r'/obra/(\d+)', id)
-            id_value = match.group(1)
-            response = Http.get(f'{self.base}/obras/{id_value}').json()
-            title = response['resultado']['obr_nome']
-            list = []
-            for ch in response['resultado']['capitulos']:
-                list.append(Chapter([id_value, ch['cap_id']], ch['cap_nome'], title))
-            return list
-        except Exception as e:
-            print(e)
-
-
-    def get_Pages(self, id, sleep, background = False):
-        async def get_Pages_driver():
-            inject_script = """
-            const mockResponse = {
-                statusCode: 200,
-                resultado: {
-                    usr_id: 83889,
-                    usr_nome: "White_Preto",
-                    usr_email: "emailgay@gmail.com",
-                    usr_nick: "emailgay",
-                    usr_imagem: null,
-                    usr_banner: null,
-                    usr_moldura: null,
-                    usr_criado_em: "2025-02-26 16:34:19.591",
-                    usr_atualizado_em: "2025-02-26 16:34:19.591",
-                    usr_status: "ATIVO",
-                    vip_habilitado: true,
-                    vip_habilitado_em: "2025-02-26 16:34:19.591",
-                    vip_temporario_em: null,
-                    vip_acaba_em: "2035-02-26 16:34:19.591",
-                    usr_google_token: null,
-                    scan: {
-                        scan_id: 1,
-                        scan_nome: "Sussy"
-                    },
-                    scan_id: 1,
-                    tags: []
-                }
-            };
-
-            // Intercepta todas as requisições para a API
-            const originalFetch = window.fetch;
-            window.fetch = async function(url, options) {
-                if (url.includes('api.sussytoons.wtf/me')) {
-                    return new Response(JSON.stringify(mockResponse), {
-                        status: 200,
-                        headers: {'Content-Type': 'application/json'}
-                    });
-                }
-                return originalFetch(url, options);
-            };
-            """
-
-            browser = await uc.start(
-                browser_args=[
-                    '--window-size=600,600', 
-                    f'--app={id}',
-                    '--disable-extensions', 
-                    '--disable-popup-blocking'
-                ],
-                browser_executable_path=None,
-                headless=background
-            )
-            page = await browser.get(id)
-            await browser.cookies.set_all(self.cookies)
+    def _rate_limited_request(self, url, timeout=30):
+        """Faz requisição com rate limiting global para evitar 403"""
+        global _LAST_REQUEST_TIME, _REQUEST_LOCK, _MIN_INTERVAL
+        
+        with _REQUEST_LOCK:
+            # Calcula tempo desde última requisição
+            current_time = time.time()
+            time_since_last = current_time - _LAST_REQUEST_TIME
             
-            await page.evaluate(inject_script)
+            # Se foi muito rápido, aguarda
+            if time_since_last < _MIN_INTERVAL:
+                sleep_time = _MIN_INTERVAL - time_since_last
+                print(f"[SussyToons] Rate limiting: aguardando {sleep_time:.2f}s")
+                time.sleep(sleep_time)
             
-            await asyncio.sleep(sleep)
-            html = await page.get_content()
-            browser.stop() 
-            return html
-        resultado = uc.loop().run_until_complete(get_Pages_driver())
-        return resultado
-    
-    def getPages(self, ch: Chapter) -> Pages:
-        images = []
-        base_delay = 1
-        max_delay = 30
-        max_attempts = 5 
-        attempt = 0
+            # Atualiza timestamp
+            _LAST_REQUEST_TIME = time.time()
+        
+        # Faz a requisição fora do lock
+        session = requests.Session()
+        session.headers.update(self.headers)
+        
+        # Adicionar cookies se necessário
+        for cookie in self.cookies:
+            if isinstance(cookie, dict):
+                for key, value in cookie.items():
+                    session.cookies.set(key, value)
         
         try:
-            response = requests.get(f"{self.base}/capitulos/{ch.id[1]}", headers=self.headers, timeout=30)
+            response = session.get(url, timeout=timeout)
             response.raise_for_status()
+            return response
+        finally:
+            session.close()
+
+    def getManga(self, link: str) -> Manga:
+        try:
+            match = re.search(r'/obra/(\d+)', link)
+            if not match:
+                raise Exception("ID do mangá não encontrado na URL")
+                
+            id_value = match.group(1)
+            
+            response = self._rate_limited_request(f'{self.base}/obras/{id_value}')
+            
+            data = response.json()
+            title = data['resultado']['obr_nome']
+            return Manga(link, title)
+            
+        except Exception as e:
+            print(f"[SussyToons] Erro em getManga: {e}")
+            raise
+
+    def getChapters(self, manga_id: str) -> List[Chapter]:
+        try:
+            match = re.search(r'/obra/(\d+)', manga_id)
+            if not match:
+                raise Exception("ID do mangá não encontrado")
+                
+            id_value = match.group(1)
+            
+            response = self._rate_limited_request(f'{self.base}/obras/{id_value}')
+            
+            data = response.json()
+            title = data['resultado']['obr_nome']
+            chapters_list = []
+            for ch in data['resultado']['capitulos']:
+                chapters_list.append(Chapter([id_value, ch['cap_id']], ch['cap_nome'], title))
+            return chapters_list
+        except Exception as e:
+            print(f"[SussyToons] Erro em getChapters: {e}")
+            return []
+
+    def getPages(self, ch: Chapter) -> Pages:
+        """Obter páginas usando apenas API - versão thread-safe"""
+        images = []
+        
+        print(f"[SussyToons] Obtendo páginas para: {ch.name}")
+        
+        time.sleep(random.uniform(0, 2))  # Pequena espera para evitar bloqueios
+        try:
+            # Usar API com rate limiting
+            response = self._rate_limited_request(f"{self.base}/capitulos/{ch.id[1]}")
 
             resultado = response.json()['resultado']
-            print(resultado)
+            print(f"[SussyToons] API retornou {len(resultado.get('cap_paginas', []))} páginas")
 
             def clean_path(p):
-                return p.strip('/')
+                return p.strip('/') if p else ''
 
-            images = []
-            for pagina in resultado['cap_paginas']:
-                print(pagina)
-                mime = pagina.get('mime')
-                path = clean_path(pagina.get('path', ''))
-                src = clean_path(pagina.get('src', ''))
-                if mime is not None:
-                    full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
-                else:
-                    full_url = f"{self.CDN}/{path}/{src}"
-                images.append(full_url)
-
-            return Pages(ch.id, ch.number, ch.name, images)
-        except Exception:
-            while attempt < max_attempts:
+            for i, pagina in enumerate(resultado.get('cap_paginas', [])):
                 try:
-                    current_delay = min(base_delay * math.pow(2, attempt), max_delay)
+                    mime = pagina.get('mime')
+                    path = clean_path(pagina.get('path', ''))
+                    src = clean_path(pagina.get('src', ''))
                     
-                    print(f"Attempt {attempt + 1} - Using {current_delay} seconds delay")
-                    
-                    html = self.get_Pages(
-                        id=f'{self.webBase}/capitulo/{ch.id[1]}',
-                        sleep=current_delay,
-                        background=attempt > 1 
-                    )
-                    
-                    soup = BeautifulSoup(html, 'html.parser')
-                    images = [img.get('src') for img in soup.select('img.chakra-image.css-8atqhb')]
-                    
-                    if images:
-                        print("Successfully fetched images")
-                        break
+                    if mime is not None:
+                        # Novo formato CDN
+                        full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
                     else:
-                        print("No images found, retrying...")
-
+                        # Formato antigo
+                        full_url = f"{self.CDN}/{path}/{src}"
+                    
+                    if full_url and full_url.startswith('http'):
+                        images.append(full_url)
+                        print(f"[SussyToons] Página {i+1}: {full_url}")
+                    
                 except Exception as e:
-                    print(f"Attempt {attempt + 1} failed: {str(e)}")
+                    print(f"[SussyToons] Erro ao processar página {i+1}: {e}")
+                    continue
+            
+            if images:
+                print(f"[SussyToons] ✅ Sucesso: {len(images)} páginas encontradas")
+                return Pages(ch.id, ch.number, ch.name, images)
+            else:
+                print("[SussyToons] ⚠️ Nenhuma página válida encontrada")
                 
-                attempt += 1
+        except requests.exceptions.RequestException as e:
+            print(f"[SussyToons] ❌ Erro de rede na API: {e}")
+        except Exception as e:
+            print(f"[SussyToons] ❌ Erro geral na API: {e}")
 
-            return Pages(ch.id, ch.number, ch.name, images)
+        # Se chegou aqui, API falhou - retornar páginas vazias
+        # Não usar navegador para evitar crashes no "Baixar tudo"
+        print("[SussyToons] ❌ Falha na API - retornando lista vazia")
+        return Pages(ch.id, ch.number, ch.name, [])
