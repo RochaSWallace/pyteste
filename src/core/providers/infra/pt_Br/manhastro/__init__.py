@@ -62,12 +62,7 @@ def _check_manhastro_login():
     page = ChromiumPage()
     try:
         page.get('https://manhastro.net/')
-        time.sleep(20)
-        
-        # Se foi redirecionado para login, aguarda 30s
-        if '/login' in page.url:
-            print("Manhastro: Redirecionado para login. Aguardando 30 segundos para login manual...")
-            time.sleep(30)
+        time.sleep(30)
     finally:
         page.quit()
         _MANHASTRO_LOGIN_CHECKED = True
@@ -162,7 +157,7 @@ class ManhastroProvider(WordPressMadara):
     def getPages(self, ch: Chapter) -> Pages:
         """Pega páginas usando aba compartilhada no navegador principal com retry"""
         browser = _get_shared_browser()
-        max_retries = 3
+        max_retries = 10
         
         for attempt in range(max_retries):
             new_tab = None
@@ -174,7 +169,7 @@ class ManhastroProvider(WordPressMadara):
                 print(f"Tentativa {attempt + 1}/{max_retries} - Buscando páginas para: {ch.name}")
                 
                 new_tab.get(uri)
-                time.sleep(3)
+                time.sleep(2*(attempt+1))  # Espera progressiva
                 
                 # Usar a nova aba para extrair dados
                 response = new_tab.html
@@ -209,8 +204,7 @@ class ManhastroProvider(WordPressMadara):
             
             # Se não é a última tentativa, aguarda antes de tentar novamente
             if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 2  # 2s, 4s progressivamente
-                print(f"⏳ Aguardando {wait_time}s antes da próxima tentativa...")
+                wait_time = (attempt + 1) * 2  # 2s, 4s, 6s progressivamente
                 time.sleep(wait_time)
         
         # Se chegou aqui, todas as tentativas falharam
