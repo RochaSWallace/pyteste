@@ -332,7 +332,7 @@ class ManhastroProvider(WordPressMadara):
     
     def download(self, pages: Pages, fn: any, headers=None, cookies=None):
         pages = DownloadUseCase().execute(pages=pages, fn=fn, headers=headers, cookies=cookies)
-        marks = ['mark.jpg', 'mark2.jpg', 'mark3.jpg', 'mark4.jpg', 'mark5.jpg', 'mark6.jpg', 'mark7.jpg', 'mark8.jpg', 'mark9.jpg', 'mark10.jpg', 'mark11.jpg', 'mark12.jpg', 'mark13.jpg', 'mark14.jpg']
+        marks = ['mark.jpg', 'mark2.jpg', 'mark3.jpg', 'mark4.jpg', 'mark5.jpg', 'mark6.jpg', 'mark7.jpg', 'mark8.jpg', 'mark9.jpg', 'mark10.jpg', 'mark11.jpg', 'mark12.jpg', 'mark13.jpg', 'mark14.jpg', 'mark15.jpg']
         temp_page = sorted(pages.files)
         for page in temp_page[-2:]:
             print(f'Removendo marca d\'água de: {page}')
