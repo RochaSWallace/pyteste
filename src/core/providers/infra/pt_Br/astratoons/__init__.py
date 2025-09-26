@@ -89,7 +89,7 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
         
         images_container = soup.select_one('div.chapter-images-container, div#chapterImagesContainer')
         
-        if not images_container:
+        if images_container:
             images = soup.select_one(self.get_div_page)
             if images:
                 image = images.select(self.get_pages)
@@ -99,7 +99,7 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
                 return Pages(ch.id, ch.number, ch.name, list)
             else:
                 raise Exception("Container de imagens não encontrado")
-        
+
         # Busca pelos elementos canvas com data-src-url
         canvas_elements = images_container.select('canvas.chapter-image-canvas[data-src-url]')
         
