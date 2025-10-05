@@ -1,21 +1,12 @@
 import re
-import asyncio
-import nodriver as uc
-from time import sleep
-from bs4 import BeautifulSoup
-from urllib.parse import urljoin
-from core.__seedwork.infra.http import Http
-from core.providers.domain.entities import Chapter, Pages
-from core.providers.infra.template.manga_reader_cms import MangaReaderCms
-from core.config.login_data import insert_login, LoginData, get_login, delete_login
-import base64
+import requests
 from typing import List
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, unquote
 from core.__seedwork.infra.http import Http
-from core.providers.infra.template.base import Base
-from urllib.parse import unquote, urljoin, urlparse
 from core.providers.domain.entities import Chapter, Pages, Manga
+from core.providers.infra.template.manga_reader_cms import MangaReaderCms
+from core.config.login_data import insert_login, LoginData, get_login, delete_login
 
 
 class YomuComicsProvider(MangaReaderCms):
@@ -49,153 +40,54 @@ class YomuComicsProvider(MangaReaderCms):
         return False
     
     def login(self):
-        print("login")
+        """Login via API - execução simplificada para evitar conflitos de threading"""
+        # Verifica se já tem login salvo (não faz requisições aqui)
         login_info = get_login(self.domain)
         if login_info:
-            response  = Http.get(self.url)
-            if self._is_login_page(response.content):
-                delete_login(self.domain)
-                login_info = None
+            print("[YomuComics] ✅ Login encontrado em cache")
+            return True
+        
+        print("[YomuComics] ⚠️  Nenhum login encontrado")
+        print("[YomuComics] 📝 Faça login manualmente no navegador em: https://yomu.com.br")
+        
+        # Tenta fazer login via API de forma simples
+        try:
+            session = requests.Session()
             
-        if not login_info:
-            async def getLogin():
-                browser = await uc.start()
-                # ✅ CREDENCIAIS PRÉ-DEFINIDAS
-                LOGIN_EMAIL = "opai@gmail.com"
-                LOGIN_PASSWORD = "Opaiec@lvo1"
+            login_data = {
+                'email': 'opai@gmail.com',
+                'password': 'Opaiec@lvo1'
+            }
+            
+            response = session.post(
+                self.login_page,
+                data=login_data,
+                headers={
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                },
+                timeout=15
+            )
+            
+            # Se status OK, salva cookies
+            if response.status_code == 200:
+                cookies_dict = {}
+                for cookie in session.cookies:
+                    cookies_dict[cookie.name] = cookie.value
                 
-                page = await browser.get(self.login_page)
-                
-                print("🔐 Fazendo login automático...")
-                
-                try:
-                    # Aguarda a página carregar completamente
-                    await asyncio.sleep(3)
-                    
-                    # ✅ PREENCHE EMAIL
-                    email_input = await page.select('#email')
-                    if email_input:
-                        await email_input.send_keys(LOGIN_EMAIL)
-                        print(f"✅ Email preenchido: {LOGIN_EMAIL}")
-                    else:
-                        print("❌ Campo email não encontrado")
-                        # Tenta seletores alternativos
-                        email_input = await page.select('input[name="email"]')
-                        if email_input:
-                            await email_input.send_keys(LOGIN_EMAIL)
-                            print("✅ Email preenchido com seletor alternativo")
-                    
-                    # ✅ PREENCHE SENHA
-                    password_input = await page.select('#password')
-                    if password_input:
-                        await password_input.send_keys(LOGIN_PASSWORD)
-                        print("✅ Senha preenchida")
-                    else:
-                        print("❌ Campo senha não encontrado")
-                        # Tenta seletores alternativos
-                        password_input = await page.select('input[name="password"]')
-                        if password_input:
-                            await password_input.send_keys(LOGIN_PASSWORD)
-                            print("✅ Senha preenchida com seletor alternativo")
-                    
-                    # ✅ CLICA NO BOTÃO DE LOGIN
-                    login_button = await page.select('button[type="submit"]')
-                    if login_button:
-                        await login_button.click()
-                        print("✅ Botão de login clicado")
-                    else:
-                        # Tenta seletores alternativos para o botão
-                        login_button = await page.select('button:contains("Entrar")')
-                        if login_button:
-                            await login_button.click()
-                            print("✅ Botão 'Entrar' clicado")
-                        else:
-                            print("❌ Botão de login não encontrado")
-                    
-                    # ✅ AGUARDA LOGIN SER PROCESSADO
-                    print("⏳ Aguardando processamento do login...")
-                    login_attempts = 0
-                    max_attempts = 30  # 30 segundos máximo
-                    
-                    while login_attempts < max_attempts:
-                        await asyncio.sleep(1)
-                        login_attempts += 1
-                        
-                        # Verifica se ainda está na página de login
-                        html_page = await page.get_content()
-                        current_url = page.url
-                        
-                        # Se não está mais na página de login, login foi bem-sucedido
-                        if not self._is_login_page(html_page) or '/auth/login' not in current_url:
-                            print(f"✅ Login bem-sucedido! URL atual: {current_url}")
-                            
-                            # ✅ CAPTURA COOKIES DE AUTENTICAÇÃO
-                            cookies = await browser.cookies.get_all()
-                            auth_cookie_found = False
-                            
-                            for cookie in cookies:
-                                # Procura por diferentes tipos de cookies de autenticação
-                                if (cookie.name.startswith('wordpress_logged_in_') or 
-                                    'auth' in cookie.name.lower() or
-                                    'session' in cookie.name.lower() or
-                                    'token' in cookie.name.lower()):
-                                    
-                                    print(f"🍪 Cookie de autenticação encontrado: {cookie.name}")
-                                    insert_login(LoginData(self.domain, {}, {cookie.name: cookie.value}))
-                                    auth_cookie_found = True
-                            
-                            # Se não encontrou cookies específicos, salva todos os cookies do domínio
-                            if not auth_cookie_found:
-                                all_cookies = {}
-                                for cookie in cookies:
-                                    if 'yomu' in cookie.domain or 'com.br' in cookie.domain:
-                                        all_cookies[cookie.name] = cookie.value
-                                
-                                if all_cookies:
-                                    print(f"🍪 Salvando {len(all_cookies)} cookies do domínio")
-                                    insert_login(LoginData(self.domain, {}, all_cookies))
-                            
-                            break
-                        
-                        # Verifica se houve erro de login
-                        if 'erro' in html_page.lower() or 'invalid' in html_page.lower():
-                            print("❌ Erro de login detectado - credenciais inválidas?")
-                            break
-                    
-                    if login_attempts >= max_attempts:
-                        print("⏰ Timeout no login - fallback para login manual")
-                        # Fallback para login manual
-                        while True:
-                            html_page = await page.get_content()
-                            if self._is_login_page(html_page):
-                                await asyncio.sleep(1)
-                            else:
-                                cookies = await browser.cookies.get_all()
-                                for cookie in cookies:
-                                    if cookie.name.startswith('wordpress_logged_in_'):
-                                        insert_login(LoginData(self.domain, {}, {cookie.name: cookie.value}))
-                                        break
-                                break
-                
-                except Exception as e:
-                    print(f"❌ Erro durante login automático: {e}")
-                    print("🔄 Fallback para login manual...")
-                    # Fallback para o método original
-                    while True:
-                        html_page = await page.get_content()
-                        if self._is_login_page(html_page):
-                            sleep(1)
-                        else:
-                            cookies = await browser.cookies.get_all()
-                            for cookie in cookies:
-                                if cookie.name.startswith('wordpress_logged_in_'):
-                                    insert_login(LoginData(self.domain, {}, {cookie.name: cookie.value}))
-                                    break
-                            break
-                
-                browser.stop()
-            uc.loop().run_until_complete(getLogin())
-    
+                if cookies_dict:
+                    insert_login(LoginData(self.domain, {}, cookies_dict))
+                    print(f"[YomuComics] ✅ {len(cookies_dict)} cookies salvos")
+                    return True
+            
+            print(f"[YomuComics] ⚠️  Status: {response.status_code}")
+            return False
+            
+        except Exception as e:
+            print(f"[YomuComics] ⚠️  Erro no login automático: {e}")
+            print("[YomuComics] 💡 O provider funcionará para conteúdo público")
+            return False
+
     def getManga(self, link: str) -> Manga:
         url = link.replace(self.link_obra, self.public_chapter)
         response = Http.get(url)
