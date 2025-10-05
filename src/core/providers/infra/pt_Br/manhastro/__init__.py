@@ -331,6 +331,8 @@ class ManhastroProvider(WordPressMadara):
             return False
     
     def download(self, pages: Pages, fn: any, headers=None, cookies=None):
+        print(f"tipo:{type(fn)}")
+        print(f"fn:{fn}")
         pages = DownloadUseCase().execute(pages=pages, fn=fn, headers=headers, cookies=cookies)
         marks = ['mark.jpg', 'mark2.jpg', 'mark3.jpg', 'mark4.jpg', 'mark5.jpg', 'mark6.jpg', 'mark7.jpg', 'mark8.jpg', 'mark9.jpg', 'mark10.jpg', 'mark11.jpg', 'mark12.jpg', 'mark13.jpg', 'mark14.jpg', 'mark15.jpg']
         temp_page = sorted(pages.files)
