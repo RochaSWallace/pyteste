@@ -326,14 +326,31 @@ class MangaDownloaderApp:
                 update_external(checked)
 
     def chapter_download_button_clicked(self, ch: Chapter, download_button):
+        """Inicia o download de um capítulo individual"""
         try:
+            # Desabilita o botão para prevenir cliques duplos
             download_button.setEnabled(False)
 
+            # Cria o runnable para download
             runnable = DownloadRunnable(ch, self.provider_selected)
+            
+            # ✅ CRÍTICO: Previne que o QRunnable seja auto-deletado
+            # Isso mantém o objeto vivo até que o download complete
+            runnable.setAutoDelete(False)
+            
+            # Adiciona à lista de status ANTES de iniciar
             self.download_status.append((ch, self.provider_selected, runnable))
+            
+            # Atualiza a UI de progresso (isso vai iniciar o runnable)
             self._load_progress()
+            
         except Exception as e:
-            print(f"Error in chapter download button clicked: {e}")
+            print(f"❌ Erro ao iniciar download do capítulo: {e}")
+            import traceback
+            traceback.print_exc()
+            
+            # Re-habilita o botão em caso de erro
+            download_button.setEnabled(True)
 
     def _add_chapters(self):
         while self.window.verticalChapter.count():
@@ -445,26 +462,45 @@ class MangaDownloaderApp:
             msg.exec()
 
     def download_all_chapters(self):
+        """Baixa todos os capítulos que ainda não foram baixados"""
         if self.manga_id_selectd is None:
             return
 
+        # Obtém IDs dos capítulos já em download
         downloaded_chapter_ids = {ch.id for ch, *_ in self.download_status}
 
-        chapters_to_download = filter(
-            lambda chapter: chapter.id not in downloaded_chapter_ids, self.chapters
-        )
+        # Filtra apenas capítulos não baixados
+        chapters_to_download = [
+            chapter for chapter in self.chapters 
+            if chapter.id not in downloaded_chapter_ids
+        ]
+        
+        print(f"[DEBUG] Preparando download de {len(chapters_to_download)} capítulos")
+        
+        # Cria runnables para cada capítulo
+        for chapter in chapters_to_download:
+            runnable = DownloadRunnable(chapter, self.provider_selected)
+            
+            # ✅ CRÍTICO: Previne auto-delete
+            runnable.setAutoDelete(False)
+            
+            self.download_status.append((chapter, self.provider_selected, runnable))
 
-        self.download_status.extend(
-            (chapter, self.provider_selected, DownloadRunnable(chapter, self.provider_selected))
-            for chapter in chapters_to_download
-        )
-
+        # Atualiza UI e inicia downloads
         self._load_progress()
         self._add_chapters()
+        
+        print(f"[DEBUG] Todos os {len(chapters_to_download)} capítulos foram enfileirados")
 
     def _load_progress(self):
+        """Carrega e atualiza a interface de progresso dos downloads"""
         for download in self.download_status:
             ch, provider, runnable = download
+
+            # ✅ Verifica se o runnable já foi iniciado
+            # (previne iniciar duas vezes o mesmo download)
+            if hasattr(runnable, '_started'):
+                continue
 
             groupbox = self.window.findChild(QGroupBox, f'groupboxprovider{provider.name}')
             layout = self.window.findChild(QVBoxLayout, f"layoutprovider{provider.name}")
@@ -508,16 +544,23 @@ class MangaDownloaderApp:
                 progress_layout.addWidget(download_label)
                 progress_bar = QProgressBar()
 
+                # ✅ Conecta sinais ANTES de iniciar o runnable
                 runnable.signals.progress_changed.connect(lambda value, pb=progress_bar: pb.setValue(value))
                 runnable.signals.color.connect(lambda value, pb=progress_bar: pb.setStyleSheet(value))
                 runnable.signals.name.connect(lambda value, lbl=download_label: lbl.setText(value))
                 runnable.signals.download_error.connect(lambda value, error=QMessageBox: error.critical(None, "Error", f"{str(value)}"))
+                
+                # ✅ Marca como iniciado ANTES de chamar start()
+                runnable._started = True
+                
+                # ✅ Inicia o download no pool de threads
                 self.pool.start(runnable)
 
                 progress_layout.addWidget(progress_bar)
                 layout_item.addLayout(progress_layout)
                 layout2.addWidget(widget)
 
+        # Adiciona espaçadores
         for child in self.window.findChildren(QWidget):
             layout = child.layout()
             if layout and layout.objectName().startswith('layoutmedia'):
