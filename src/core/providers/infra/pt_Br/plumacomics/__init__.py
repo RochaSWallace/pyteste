@@ -6,6 +6,8 @@ from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+import re
+import json
 
 class PlumaComicsProvider(WordpressEtoshoreMangaTheme):
     name = 'Pluma Comics'
@@ -21,7 +23,7 @@ class PlumaComicsProvider(WordpressEtoshoreMangaTheme):
         self.get_chapter_number = 'span.chapternum'
         self.get_div_page = 'div#readerarea'
         self.get_pages = 'img.ts-main-image'
-    
+
     def getManga(self, link: str) -> Manga:
         response = Http.get(link)
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -41,6 +43,47 @@ class PlumaComicsProvider(WordpressEtoshoreMangaTheme):
         return list
 
     def getPages(self, ch: Chapter) -> Pages:
+        try:
+            # Método principal: requisição via Http e extração do JSON do script
+            response = Http.get(ch.id)
+            html_content = response.content.decode('utf-8') if isinstance(response.content, bytes) else response.content
+            
+            # Procura pelo padrão ts_reader.run({...})
+            pattern = r'ts_reader\.run\((\{.*?\})\);'
+            match = re.search(pattern, html_content, re.DOTALL)
+            
+            if match:
+                json_str = match.group(1)
+                # Parse do JSON
+                data = json.loads(json_str)
+                
+                # Extrai as imagens do primeiro source
+                if 'sources' in data and len(data['sources']) > 0:
+                    images = data['sources'][0].get('images', [])
+                    if images:
+                        return Pages(ch.id, ch.number, ch.name, images)
+            
+            # Se não encontrou no script, tenta pelo HTML direto
+            soup = BeautifulSoup(html_content, 'html.parser')
+            div_pages = soup.select_one(self.get_div_page)
+            
+            if div_pages:
+                images = div_pages.select(self.get_pages)
+                img_urls = []
+                for img in images:
+                    url = img.get('data-src') or img.get('src')
+                    if url and 'readerarea.svg' not in url:
+                        img_urls.append(url)
+                
+                if img_urls:
+                    return Pages(ch.id, ch.number, ch.name, img_urls)
+            
+            # Se não encontrou imagens, tenta método alternativo
+            print(f"Aviso: Não foi possível obter páginas via Http para {ch.number}. Tentando com Selenium...")
+        except Exception as e:
+            print(f"Erro ao obter páginas via Http: {e}. Tentando com Selenium...")
+        
+        # Método alternativo: Selenium (fallback)
         options = Options()
         options.add_argument('--headless')
         options.add_argument('--disable-gpu')
@@ -64,7 +107,11 @@ class PlumaComicsProvider(WordpressEtoshoreMangaTheme):
             soup = BeautifulSoup(html, 'html.parser')
             div_pages = soup.select_one(self.get_div_page)
             images = div_pages.select(self.get_pages) if div_pages else []
-            img_urls = [img.get('data-src') or img.get('src') for img in images]
+            img_urls = []
+            for img in images:
+                url = img.get('data-src') or img.get('src')
+                if url and 'readerarea.svg' not in url:
+                    img_urls.append(url)
             return Pages(ch.id, ch.number, ch.name, img_urls)
         finally:
             driver.quit()
