@@ -12,10 +12,10 @@ from urllib.parse import urljoin, urlencode, urlparse, urlunparse, parse_qs
 class NexusScanProvider(WordPressMadara):
     name = 'Nexus Scan'
     lang = 'pt-Br'
-    domain = ['nexusscan.site']
+    domain = ['nexustoons.site']
 
     def __init__(self):
-        self.url = 'https://nexusscan.site/'
+        self.url = 'https://nexustoons.site/'
 
         self.path = ''
         
@@ -25,7 +25,7 @@ class NexusScanProvider(WordPressMadara):
         self.query_pages = 'div.page-break.no-gaps'
         self.query_title_for_uri = 'h1.item-title'
         self.query_placeholder = '[id^="manga-chapters-holder"][data-id]'
-        self.api_chapters = 'https://nexusscan.site/api/'
+        self.api_chapters = 'https://nexustoons.site/api/'
     
     def getManga(self, link: str) -> Manga:
         response = Http.get(link, timeout=getattr(self, 'timeout', None))
@@ -45,8 +45,8 @@ class NexusScanProvider(WordPressMadara):
 
         try:
             data = self._get_chapters_ajax(id)
-        except Exception:
-            raise Exception("erro ajax")
+        except Exception as e:
+            raise ValueError(f"Erro ao buscar capítulos via AJAX: {e}")
 
         chs = []
         for el in data:
@@ -63,83 +63,132 @@ class NexusScanProvider(WordPressMadara):
         return chs
     
     def getPages(self, ch: Chapter) -> Pages:
-        # 'https://nexusscan.site/api/page-data/missoes-na-vida-real/172/5/'
-        # 
-        
-        uri = str(ch.id)
-        if uri.startswith("/manga/"):
-            uri = uri.replace("/manga/", "page-data/", 1)  # Só primeira ocorrência
-        elif uri.startswith("manga/"):
-            uri = uri.replace("manga/", "page-data/", 1)
-        else:
-            # Fallback se não encontrar o padrão esperado
-            print(f"⚠️ Padrão inesperado em ch.id: {uri}")
-            # Tenta extrair o slug do mangá de outra forma
-            parts = uri.strip('/').split('/')
-            if len(parts) >= 2:
-                uri = f"page-data/{'/'.join(parts[1:])}" 
-        
-        uri_base = f"{self.api_chapters}{uri}"
-        count = 1
-        list = [] 
-        while True:
-            uri = f"{uri_base}{count}/"
-            try:
-                response = Http.get(uri)
-                soup = BeautifulSoup(response.content, 'html.parser')
-                temp = soup.text
-                image = dict(json.loads(temp)).get("image_url")
-                list.append(image)
-                count += 1
-            except:
-                break
+        try:
+            # Método 1: Captura do script JSON (método principal)
+            uri = urljoin(self.url, ch.id)
+            response = Http.get(uri, timeout=getattr(self, 'timeout', None))
+            soup = BeautifulSoup(response.content, 'html.parser')
+            
+            # Procura pelo script com id="page-data"
+            page_data_script = soup.find('script', {'id': 'page-data', 'type': 'application/json'})
+            
+            if page_data_script and page_data_script.string:
+                try:
+                    # Parse do JSON
+                    pages_data = json.loads(page_data_script.string.strip())
+                    
+                    # Extrai as URLs das imagens ordenadas por page_number
+                    img_urls = [page['image_url'] for page in sorted(pages_data, key=lambda x: x['page_number'])]
+                    
+                    if img_urls:
+                        number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
+                        return Pages(ch.id, number, ch.name, img_urls)
+                except json.JSONDecodeError as e:
+                    print(f"[NEXUSSCAN] ✗ Erro ao parsear JSON do script: {e}")
+            
+            # Método 2: Fallback - API (método antigo)
+            uri = str(ch.id)
+            if uri.startswith("/manga/"):
+                uri = uri.replace("/manga/", "page-data/", 1)
+            elif uri.startswith("manga/"):
+                uri = uri.replace("manga/", "page-data/", 1)
+            else:
+                print(f"⚠️ Padrão inesperado em ch.id: {uri}")
+                parts = uri.strip('/').split('/')
+                if len(parts) >= 2:
+                    uri = f"page-data/{'/'.join(parts[1:])}" 
+            
+            uri_base = f"{self.api_chapters}{uri}"
+            count = 1
+            list = [] 
+            while True:
+                uri = f"{uri_base}{count}/"
+                try:
+                    response = Http.get(uri)
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    temp = soup.text
+                    image = dict(json.loads(temp)).get("image_url")
+                    list.append(image)
+                    count += 1
+                except:
+                    break
 
-        number = re.findall(r'\d+\.?\d*', str(ch.number))[0]
-        return Pages(ch.id, number, ch.name, list)
+            number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
+            
+            if list:
+                print(f"[NEXUSSCAN] ✓ {len(list)} páginas obtidas via API (fallback)")
+                return Pages(ch.id, number, ch.name, list)
+            else:
+                print(f"[NEXUSSCAN] ✗ Nenhuma página encontrada")
+                return Pages(ch.id, number, ch.name, [])
+                
+        except Exception as e:
+            print(f"[NEXUSSCAN] ✗ Erro ao obter páginas: {e}")
+            number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
+            return Pages(ch.id, number, ch.name, [])
     
     def _get_chapters_ajax(self, manga_id):
-        # https://nexusscan.site/ajax/load-chapters/?item_slug=missoes-na-vida-real&page=1&sort=desc&q=
+        # https://nexustoons.site/ajax/load-chapters/?item_slug=missoes-na-vida-real&page=1&sort=desc&q=
         title = manga_id.split('/')[-2]
         page = 1
         all_chapters = []
         seen_hrefs = set()
         
         while True:
-            uri = f'https://nexusscan.site/ajax/load-chapters/?item_slug={title}&page={page}&sort=desc&q='
+            uri = f'https://nexustoons.site/ajax/load-chapters/?item_slug={title}&page={page}&sort=desc&q='
             response = Http.get(uri, timeout=getattr(self, 'timeout', None))
-                
-            data = self._fetch_dom(response, self.query_chapters)
             
-            if not data:
+            # Parse do HTML retornado
+            soup = BeautifulSoup(response.content, 'html.parser')
+            # Busca todos os links de capítulos
+            chapter_links = soup.select('a')
+            
+            if not chapter_links:
+                print(f"[NEXUSSCAN] Nenhum capítulo encontrado na página {page}")
                 break
             
             # Detecta repetições para parar o loop
-            page_hrefs = set()
             repeated_count = 0
+            new_chapters_count = 0
             
-            for chapter in data:
-                href = chapter.get("href", "")
+            for link in chapter_links:
+                href = link.get('href', '').strip()
+                chapter_number = link.get('data-chapter-number', '').strip()
+                
+                # Remove caracteres de escape
+                chars_to_remove = ['"', '\\n', '\\', '\r', '\t', "'"]
+                for char in chars_to_remove:
+                    chapter_number = chapter_number.replace(char, '')
+                    href = href.replace(char, '')
+                
+                # Verifica se já vimos este capítulo
                 if href in seen_hrefs:
                     repeated_count += 1
-                else:
-                    seen_hrefs.add(href)
-                    page_hrefs.add(href)
+                    continue
+                
+                seen_hrefs.add(href)
+                new_chapters_count += 1
+                
+                # Cria um dicionário compatível com o formato esperado
+                chapter_data = {
+                    'href': href,
+                    'data-chapter-number': chapter_number
+                }
+                all_chapters.append(chapter_data)
             
-            # Se mais de 50% são repetições, para o loop
-            if repeated_count >= len(data) * 0.5:
+            # Se mais de 80% são repetições ou nenhum novo, para o loop
+            if len(chapter_links) > 0 and (repeated_count >= len(chapter_links) * 0.8 or new_chapters_count == 0):
+                print("[NEXUSSCAN] Parando: muitas repetições detectadas")
                 break
-            
-            # Adiciona apenas capítulos novos
-            new_chapters = [ch for ch in data if ch.get("href", "") in page_hrefs]
-            all_chapters.extend(new_chapters)
             
             page += 1
             
             # Proteção contra loop infinito
             if page > 100:
+                print("[NEXUSSCAN] Limite de páginas atingido (100)")
                 break
         
         if all_chapters:
             return all_chapters
         else:
-            raise Exception('No chapters found (ajax pagination)!')
+            raise ValueError('No chapters found (ajax pagination)!')

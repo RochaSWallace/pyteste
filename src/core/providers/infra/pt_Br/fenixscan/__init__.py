@@ -17,7 +17,7 @@ class FenixScansProvider(WordPressMadara):
         self.url = 'https://fenixscan.xyz/'
 
         self.path = ''
-        
+
         self.query_mangas = 'div.post-title h3 a, div.post-title h5 a'
         self.query_chapters = 'div.chapters-grid'
         self.query_chapter = 'div.chapter-item'

@@ -69,11 +69,15 @@ class Cloudflare(BypassRepository):
             page = await browser.get(url)
             agent = await page.evaluate('navigator.userAgent')
             headers = { 'user-agent': agent }
+            temp_count = 1
             while(True):
                 page_content = await page.get_content()
                 if self.is_cloudflare_blocking(page_content):
-                    sleep(1)
+                    sleep(temp_count)
+                    temp_count += 1
                 else:
+                    break
+                if temp_count > 10:
                     break
             cookiesB = await browser.cookies.get_all()
             for cookie in cookiesB:
@@ -147,6 +151,7 @@ class Cloudflare(BypassRepository):
                     await page.evaluate(f'document.cookie = "cf_clearance={re.cookies['cf_clearance']}; path=/; max-age=3600; secure; samesite=strict";')
                     await page.reload()
                     cloudflare = False
+            count = 1
             while(True):
                 try:
                     page = await browser.get(domain)
@@ -155,7 +160,10 @@ class Cloudflare(BypassRepository):
                     head = soup.find('head')
                     if self.is_cloudflare_blocking(page_content):
                         cloudflare = True
-                        sleep(1)
+                        sleep(count)
+                        count += 1
+                        if count > 10:
+                            break
                     elif head and not head.contents:
                         content = None
                         break

@@ -67,27 +67,58 @@ class HttpService(Http):
 
             if response.status_code == 403:
                 print(f"<stroke style='color:#add8e6;'>[REQUEST]:</stroke> <span style='color:#add8e6;'>GET</span> <span style='color:red;'>{status}</span> <a href='#'>{url}</a>")
+                print(f"[DEBUG] ========== INÍCIO BYPASS CLOUDFLARE (403) ==========")
+                print(f"[DEBUG] URL: {url}")
+                print(f"[DEBUG] Domain: {domain}")
+                
                 if IsCloudflareBlockingUseCase().execute(response.text):
+                        print(f"[DEBUG] ✓ IsCloudflareBlockingUseCase DETECTOU bloqueio")
                         request_data = get_request(domain)
                         if(request_data):
                             delete_request(domain)
+                            print(f"[DEBUG] Cookie antigo deletado")
+                        
+                        print(f"[DEBUG] → Chamando BypassCloudflareUseCase.execute()")
                         data = BypassCloudflareUseCase().execute(f'https://{domain}')
+                        
                         if(data.cloudflare_cookie_value):
+                            print(f"[DEBUG] ✓ Cookie cf_clearance obtido via BypassCloudflareUseCase")
                             insert_request(RequestData(domain=domain, headers=data.user_agent, cookies=data.cloudflare_cookie_value))
+                            print(f"[DEBUG] Cookie salvo, voltando ao loop para nova tentativa")
                         else:
+                            print(f"[DEBUG] ✗ Nenhum cookie obtido, tentando BypassCloudflareNoCapchaUseCase")
+                            print(f"[DEBUG] → Chamando BypassCloudflareNoCapchaUseCase.execute()")
                             content = BypassCloudflareNoCapchaUseCase().execute(url)
                             if content and not IsCloudflareBlockingBadGateway().execute(content):
+                                print(f"[DEBUG] ✓ Conteúdo obtido via BypassCloudflareNoCapchaUseCase - Retornando Response")
                                 return Response(200, 'a', content, url)
+                            else:
+                                print(f"[DEBUG] ✗ BypassCloudflareNoCapchaUseCase falhou ou retornou Bad Gateway")
+                                
                 elif IsCloudflareEnableCookies().execute(response.text):
+                    print(f"[DEBUG] ✓ IsCloudflareEnableCookies DETECTOU problema de cookies")
+                    print(f"[DEBUG] → Chamando BypassCloudflareNoCapchaFeachUseCase.execute()")
                     content = BypassCloudflareNoCapchaFeachUseCase().execute(f'https://{domain}', url)
                     if content:
+                        print(f"[DEBUG] ✓ Conteúdo obtido via BypassCloudflareNoCapchaFeachUseCase - Retornando Response")
                         return Response(200, 'a', content, url)
+                    else:
+                        print(f"[DEBUG] ✗ BypassCloudflareNoCapchaFeachUseCase retornou None")
                 else:
+                    print(f"[DEBUG] ✗ Nenhum detector específico ativado, usando fallback")
+                    print(f"[DEBUG] → Chamando BypassCloudflareNoCapchaUseCase.execute() [FALLBACK]")
                     content = BypassCloudflareNoCapchaUseCase().execute(url)
-                    if(not IsCloudflareBlockingTimeOutUseCase().execute(content)):
+                    if content and not IsCloudflareBlockingTimeOutUseCase().execute(content):
+                        print(f"[DEBUG] ✓ Conteúdo obtido via BypassCloudflareNoCapchaUseCase (fallback) - Retornando Response")
                         return Response(200, content, content, url)
                     else:
+                        print(f"[DEBUG] ✗ BypassCloudflareNoCapchaUseCase (fallback) falhou ou timeout")
+                        print(f"[DEBUG] Aguardando 30 segundos...")
                         sleep(30)
+                
+                print(f"[DEBUG] ========== FIM BYPASS CLOUDFLARE (403) ==========")
+                print(f"[DEBUG] Voltando ao loop (tentativa {count}/10)")
+                print("")
             elif status not in range(200, 299) and not 403 and not 429:
                 print(f"<stroke style='color:#add8e6;'>[REQUEST]:</stroke> <span style='color:#add8e6;'>GET</span> <span style='color:red;'>{status}</span> <a href='#'>{url}</a>")
                 sleep(1)
@@ -154,13 +185,36 @@ class HttpService(Http):
 
             if response.status_code == 403:
                 print(f"<stroke style='color:#add8e6;'>[REQUEST] POST:</stroke> <span style='color:#add8e6;'>POST</span> <span style='color:#FFFF00;'>{status}</span> <a href='#'>{url}</a>")
+                print(f"[DEBUG POST] ========== INÍCIO BYPASS CLOUDFLARE (403) ==========")
+                print(f"[DEBUG POST] URL: {url}")
+                print(f"[DEBUG POST] Domain: {domain}")
+                
                 if IsCloudflareBlockingUseCase().execute(response.text):
+                    print(f"[DEBUG POST] ✓ IsCloudflareBlockingUseCase DETECTOU bloqueio")
+                    print(f"[DEBUG POST] → Chamando BypassCloudflareUseCase.execute()")
                     data = BypassCloudflareUseCase().execute(f'https://{domain}')
-                    insert_request(RequestData(domain=domain, headers=data.user_agent, cookies=data.cloudflare_cookie_value))
+                    if data and data.cloudflare_cookie_value:
+                        print(f"[DEBUG POST] ✓ Cookie cf_clearance obtido, salvando...")
+                        insert_request(RequestData(domain=domain, headers=data.user_agent, cookies=data.cloudflare_cookie_value))
+                        print(f"[DEBUG POST] Cookie salvo, voltando ao loop")
+                    else:
+                        print(f"[DEBUG POST] ✗ Nenhum cookie obtido via BypassCloudflareUseCase")
+                        
                 elif IsCloudflareEnableCookies().execute(response.text) or IsCloudflareAttention().execute(response.text):
+                    print(f"[DEBUG POST] ✓ IsCloudflareEnableCookies ou IsCloudflareAttention DETECTOU problema")
+                    print(f"[DEBUG POST] → Chamando BypassCloudflareNoCapchaPostUseCase.execute()")
                     content = BypassCloudflareNoCapchaPostUseCase().execute(f'https://{domain}', url)
                     if content:
+                        print(f"[DEBUG POST] ✓ Conteúdo obtido via BypassCloudflareNoCapchaPostUseCase - Retornando Response")
                         return Response(200, 'a', content, url)
+                    else:
+                        print(f"[DEBUG POST] ✗ BypassCloudflareNoCapchaPostUseCase retornou None")
+                else:
+                    print(f"[DEBUG POST] ✗ Nenhum detector específico ativado")
+                
+                print(f"[DEBUG POST] ========== FIM BYPASS CLOUDFLARE (403) ==========")
+                print(f"[DEBUG POST] Voltando ao loop (tentativa {count}/10)")
+                print("")
             elif status not in range(200, 299) and not 403 and not 429:
                 print(f"<stroke style='color:#add8e6;'>[REQUEST] POST:</stroke> <span style='color:#add8e6;'>POST</span> <span style='color:red;'>{status}</span> <a href='#'>{url}</a>")
                 sleep(1)

@@ -83,7 +83,6 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
         return list
 
     def getPages(self, ch: Chapter) -> Pages:
-        print(f"chegou aqui: {ch}")
         response = Http.get(ch.id)
         soup = BeautifulSoup(response.content, 'html.parser')
         
