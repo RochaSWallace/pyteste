@@ -13,11 +13,11 @@ import json
 class YugenProvider(WordpressEtoshoreMangaTheme):
     name = 'Yugen mangas'
     lang = 'pt-Br'
-    domain = ['yugenmangasbr.yocat.xyz']
+    domain = ['yugenmangasbr.dxtg.online']
 
     def __init__(self) -> None:
-        self.url = 'https://yugenmangasbr.yocat.xyz'
-        self.link = 'https://yugenmangasbr.yocat.xyz'
+        self.url = 'https://yugenmangasbr.dxtg.online'
+        self.link = 'https://yugenmangasbr.dxtg.online'
         self.cdn = 'https://api.yugenweb.com/media/'
         self.api = 'https://api.yugenweb.com/'
         
@@ -82,39 +82,84 @@ class YugenProvider(WordpressEtoshoreMangaTheme):
         return all_chapters
     
     def getPages(self, ch: Chapter) -> Pages:
-        response = Http.get(ch.id)
-        soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Encontra todos os scripts na página
-        scripts = soup.find_all('script')
-        if scripts:
-            last_script = scripts[-1]
-
-        script_content = last_script.string
-        pages_data = []
-        # Procura pelo padrão "pages":[{...}] dentro do JSON escapado
-        # O padrão está em: self.__next_f.push([1,"18:...\"pages\":[{...}]..."])
-        match = re.search(r'\\"pages\\":\[(\{[^\]]+\}(?:,\{[^\]]+\})*)\]', script_content)
-        if match:
-            try:
-                # Remove as barras de escape e reconstrói o array JSON
-                json_str = '[' + match.group(1).replace('\\"', '"') + ']'
-                pages_json = json.loads(json_str)
-                pages_data = pages_json
-            except json.JSONDecodeError as e:
-                print(f"JSON decode error: {e}")
-
-        
-        # Ordena as páginas pelo número
-        if pages_data:
-            pages_data.sort(key=lambda x: x.get('number', 0))
-        
-        # Monta as URLs completas
-        links = []
-        for page in pages_data:
-            path = page.get('path', '')
-            if path:
-                # URL completa: https://api.yugenweb.com/media/ + path
-                links.append(urljoin(self.cdn, path))
-        
-        return Pages(ch.id, ch.number, ch.name, links)
+        try:
+            response = Http.get(ch.id)
+            html_content = response.content.decode('utf-8') if isinstance(response.content, bytes) else response.content
+            
+            # Busca pelo padrão self.__next_f.push com chapterData
+            pattern = r'self\.__next_f\.push\(\[1,"[^"]*chapterData[^"]*"\]\)'
+            matches = re.findall(pattern, html_content)
+            
+            pages_data = []
+            
+            for match in matches:
+                # Extrai o JSON dentro do push
+                json_match = re.search(r'\[1,"(.*)"\]', match)
+                if json_match:
+                    json_str = json_match.group(1)
+                    
+                    # Procura especificamente pelo array "pages"
+                    pages_pattern = r'\\"pages\\":\[(\{[^\]]+\}(?:,\{[^\]]+\})*)\]'
+                    pages_match = re.search(pages_pattern, json_str)
+                    
+                    if pages_match:
+                        try:
+                            # Remove barras de escape e reconstrói o JSON
+                            pages_json_str = '[' + pages_match.group(1).replace('\\"', '"') + ']'
+                            pages_json = json.loads(pages_json_str)
+                            
+                            # Adiciona as páginas encontradas
+                            for page in pages_json:
+                                if page not in pages_data:
+                                    pages_data.append(page)
+                                    
+                        except json.JSONDecodeError:
+                            continue
+            
+            # Se não encontrou pelo método acima, tenta o método alternativo
+            if not pages_data:
+                soup = BeautifulSoup(html_content, 'html.parser')
+                scripts = soup.find_all('script')
+                
+                for script in scripts:
+                    if script.string and 'pages' in script.string:
+                        script_content = script.string
+                        
+                        # Procura pelo padrão "pages":[{...}]
+                        pages_pattern = r'\\"pages\\":\[(\{[^\]]+\}(?:,\{[^\]]+\})*)\]'
+                        pages_match = re.search(pages_pattern, script_content)
+                        
+                        if pages_match:
+                            try:
+                                pages_json_str = '[' + pages_match.group(1).replace('\\"', '"') + ']'
+                                pages_json = json.loads(pages_json_str)
+                                pages_data = pages_json
+                                break
+                            except json.JSONDecodeError:
+                                continue
+            
+            # Ordena as páginas pelo número
+            if pages_data:
+                pages_data.sort(key=lambda x: x.get('number', 0))
+                
+                # Monta as URLs completas
+                links = []
+                for page in pages_data:
+                    path = page.get('path', '')
+                    if path:
+                        # URL completa: https://api.yugenweb.com/media/ + path
+                        full_url = urljoin(self.cdn, path)
+                        links.append(full_url)
+                
+                if links:
+                    print(f"[YUGEN] ✓ {len(links)} páginas extraídas")
+                    return Pages(ch.id, ch.number, ch.name, links)
+            
+            print("[YUGEN] ✗ Nenhuma página encontrada")
+            return Pages(ch.id, ch.number, ch.name, [])
+            
+        except Exception as e:
+            print(f"[YUGEN] ✗ Erro: {e}")
+            import traceback
+            traceback.print_exc()
+            return Pages(ch.id, ch.number, ch.name, [])
