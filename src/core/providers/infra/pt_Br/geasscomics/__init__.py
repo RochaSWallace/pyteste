@@ -27,6 +27,7 @@ from core.config.img_conf import get_config
 from core.__seedwork.infra.utils.sanitize_folder import sanitize_folder_name
 from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
+import httpx
 
 class GeassComicsProvider(Base):
     name = 'Geass Comics'
