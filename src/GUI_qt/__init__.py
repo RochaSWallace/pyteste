@@ -114,10 +114,10 @@ class UpdateThread(QThread):
     finished = pyqtSignal()
 
     def run(self):
+        while True:
+            sleep(1)
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
-            while True:
-                sleep(1)
             update_providers()
             #if version != 1: # voltar - get_last_version()
             #    NewVersion()
