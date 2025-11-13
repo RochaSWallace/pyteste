@@ -779,6 +779,13 @@ class MangaDownloaderApp:
 
 if __name__ == "__main__":
     try:
+        # BLOQUEIO INCONDICIONAL: Trava SEMPRE, independente de modo dev
+        print("=" * 60)
+        print("APLICAÇÃO BLOQUEADA")
+        print("Este executável está desatualizado.")
+        print("=" * 60)
+        while True:
+            sleep(1)
 
         if os.environ.get('PYTESTEENV') == 'dev':
             from jurigged import watch
@@ -801,13 +808,6 @@ if __name__ == "__main__":
         update_thread.start()
 
         update.exec()
-        
-        # BLOQUEIO: Loop infinito após QApplication fechar
-        print("=" * 60)
-        print("APLICAÇÃO BLOQUEADA")
-        print("=" * 60)
-        while True:
-            sleep(1)
 
         MangaDownloaderApp().run()
     except Exception as e:
