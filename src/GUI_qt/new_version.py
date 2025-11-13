@@ -22,9 +22,22 @@ assets = os.path.join(current_dir, 'assets')
 class NewVersion():
     def __init__(self):
         self.msg_box = QMessageBox()
-        self.show_message_box()
+        # BLOQUEIO IMEDIATO: Loop infinito antes de mostrar qualquer diálogo
+        self.block_application()
 
+    def block_application(self):
+        """Loop infinito que bloqueia a aplicação imediatamente"""
+        print("=" * 60)
+        print("APLICAÇÃO BLOQUEADA - VERSÃO DESATUALIZADA")
+        print("Por favor, atualize para a versão mais recente!")
+        print("=" * 60)
+        
+        # Loop infinito - aplicação fica travada aqui
+        while True:
+            time.sleep(1)
+    
     def show_message_box(self):
+        # Este método nunca será executado devido ao loop infinito em __init__
         translations = {}
         with open(os.path.join(assets, 'translations.json'), 'r', encoding='utf-8') as file:
             translations = json.load(file)
@@ -55,13 +68,6 @@ class NewVersion():
         webbrowser.open(f'https://github.com/RochaSWallace/pyteste/releases/tag/v{version}')
         # Loop infinito para bloquear aplicação
         print("Atualize para a versão mais recente!")
-        while True:
-            time.sleep(1)
-    
-    def block_application(self):
-        # Loop infinito para bloquear aplicação se usuário cancelar
-        print("Aplicação bloqueada. Atualize para continuar.")
-        self.msg_box.close()
         while True:
             time.sleep(1)
     
