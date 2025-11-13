@@ -116,8 +116,9 @@ class UpdateThread(QThread):
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
             update_providers()
-            #if version != 1: # voltar - get_last_version()
-            #    NewVersion()
+            # VERIFICAÇÃO DE VERSÃO ATIVADA - BLOQUEIA SE DESATUALIZADO
+            if version != get_last_version():
+                NewVersion()
         self.finished.emit()
 
 class MangaTaskSignals(QObject):
