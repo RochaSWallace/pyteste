@@ -8,20 +8,6 @@ from PyQt6 import uic
 from typing import List
 from clipman import init, get
 from tldextract import extract
-
-# BLOQUEIO: Import de biblioteca inexistente vai quebrar aplicativos antigos
-try:
-    import pyteste_block_v2_required_lib_2025
-    print("Biblioteca de bloqueio carregada - Sistema atualizado")
-except ImportError:
-    print("=" * 60)
-    print("ERRO CRÍTICO: Biblioteca obrigatória não encontrada")
-    print("Esta versão do aplicativo está desatualizada.")
-    print("Por favor, baixe a versão mais recente.")
-    print("=" * 60)
-    while True:
-        sleep(1)
-
 from GUI_qt.logs import LogWindow
 from GUI_qt.version import version
 from GUI_qt.loading import LoadingWindow
