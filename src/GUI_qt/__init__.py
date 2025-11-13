@@ -3,6 +3,7 @@ import os
 import sys
 import json
 import subprocess
+from time import sleep
 from PyQt6 import uic
 from typing import List
 from clipman import init, get
@@ -115,10 +116,11 @@ class UpdateThread(QThread):
     def run(self):
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
+            while True:
+                sleep(1)
             update_providers()
-            # VERIFICAÇÃO DE VERSÃO ATIVADA - BLOQUEIA SE DESATUALIZADO
-
-            NewVersion()
+            #if version != 1: # voltar - get_last_version()
+            #    NewVersion()
         self.finished.emit()
 
 class MangaTaskSignals(QObject):

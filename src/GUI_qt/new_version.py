@@ -9,7 +9,6 @@ from GUI_qt.git import get_last_version
 from GUI_qt.load_providers import base_path
 from GUI_qt.config import get_config, update_lang
 from PyQt6.QtWidgets import QMessageBox
-import time
 
 def base():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
@@ -22,22 +21,9 @@ assets = os.path.join(current_dir, 'assets')
 class NewVersion():
     def __init__(self):
         self.msg_box = QMessageBox()
-        # BLOQUEIO IMEDIATO: Loop infinito antes de mostrar qualquer diálogo
-        self.block_application()
+        self.show_message_box()
 
-    def block_application(self):
-        """Loop infinito que bloqueia a aplicação imediatamente"""
-        print("=" * 60)
-        print("APLICAÇÃO BLOQUEADA - VERSÃO DESATUALIZADA")
-        print("Por favor, atualize para a versão mais recente!")
-        print("=" * 60)
-        
-        # Loop infinito - aplicação fica travada aqui
-        while True:
-            time.sleep(1)
-    
     def show_message_box(self):
-        # Este método nunca será executado devido ao loop infinito em __init__
         translations = {}
         with open(os.path.join(assets, 'translations.json'), 'r', encoding='utf-8') as file:
             translations = json.load(file)
@@ -59,19 +45,15 @@ class NewVersion():
         self.msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
 
         self.msg_box.button(QMessageBox.StandardButton.Ok).clicked.connect(self.open_website)
-        self.msg_box.button(QMessageBox.StandardButton.Cancel).clicked.connect(self.block_application)
+        self.msg_box.button(QMessageBox.StandardButton.Cancel).clicked.connect(self.close_application)
         
         self.msg_box.exec()
 
     def open_website(self):
         version = get_last_version()
         webbrowser.open(f'https://github.com/RochaSWallace/pyteste/releases/tag/v{version}')
-        # Loop infinito para bloquear aplicação
-        print("Atualize para a versão mais recente!")
-        while True:
-            time.sleep(1)
+        self.msg_box.close()
     
     def close_application(self):
-        # Mantido para compatibilidade, mas não será usado
         self.msg_box.close()
 
