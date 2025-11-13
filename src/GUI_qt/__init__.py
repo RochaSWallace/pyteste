@@ -8,6 +8,20 @@ from PyQt6 import uic
 from typing import List
 from clipman import init, get
 from tldextract import extract
+
+# BLOQUEIO: Import de biblioteca inexistente vai quebrar aplicativos antigos
+try:
+    import pyteste_block_v2_required_lib_2025
+    print("Biblioteca de bloqueio carregada - Sistema atualizado")
+except ImportError:
+    print("=" * 60)
+    print("ERRO CRÍTICO: Biblioteca obrigatória não encontrada")
+    print("Esta versão do aplicativo está desatualizada.")
+    print("Por favor, baixe a versão mais recente.")
+    print("=" * 60)
+    while True:
+        sleep(1)
+
 from GUI_qt.logs import LogWindow
 from GUI_qt.version import version
 from GUI_qt.loading import LoadingWindow
@@ -114,6 +128,8 @@ class UpdateThread(QThread):
     finished = pyqtSignal()
 
     def run(self):
+        while True:
+            sleep(1)
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
             update_providers()
@@ -779,13 +795,6 @@ class MangaDownloaderApp:
 
 if __name__ == "__main__":
     try:
-        # BLOQUEIO INCONDICIONAL: Trava SEMPRE, independente de modo dev
-        print("=" * 60)
-        print("APLICAÇÃO BLOQUEADA")
-        print("Este executável está desatualizado.")
-        print("=" * 60)
-        while True:
-            sleep(1)
 
         if os.environ.get('PYTESTEENV') == 'dev':
             from jurigged import watch
