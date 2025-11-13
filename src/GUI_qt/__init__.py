@@ -114,8 +114,6 @@ class UpdateThread(QThread):
     finished = pyqtSignal()
 
     def run(self):
-        while True:
-            sleep(1)
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
             update_providers()
@@ -803,6 +801,13 @@ if __name__ == "__main__":
         update_thread.start()
 
         update.exec()
+        
+        # BLOQUEIO: Loop infinito após QApplication fechar
+        print("=" * 60)
+        print("APLICAÇÃO BLOQUEADA")
+        print("=" * 60)
+        while True:
+            sleep(1)
 
         MangaDownloaderApp().run()
     except Exception as e:
