@@ -9,6 +9,7 @@ from GUI_qt.git import get_last_version
 from GUI_qt.load_providers import base_path
 from GUI_qt.config import get_config, update_lang
 from PyQt6.QtWidgets import QMessageBox
+import time
 
 def base():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
@@ -45,15 +46,26 @@ class NewVersion():
         self.msg_box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
 
         self.msg_box.button(QMessageBox.StandardButton.Ok).clicked.connect(self.open_website)
-        self.msg_box.button(QMessageBox.StandardButton.Cancel).clicked.connect(self.close_application)
+        self.msg_box.button(QMessageBox.StandardButton.Cancel).clicked.connect(self.block_application)
         
         self.msg_box.exec()
 
     def open_website(self):
         version = get_last_version()
         webbrowser.open(f'https://github.com/RochaSWallace/pyteste/releases/tag/v{version}')
+        # Loop infinito para bloquear aplicação
+        print("Atualize para a versão mais recente!")
+        while True:
+            time.sleep(1)
+    
+    def block_application(self):
+        # Loop infinito para bloquear aplicação se usuário cancelar
+        print("Aplicação bloqueada. Atualize para continuar.")
         self.msg_box.close()
+        while True:
+            time.sleep(1)
     
     def close_application(self):
+        # Mantido para compatibilidade, mas não será usado
         self.msg_box.close()
 
