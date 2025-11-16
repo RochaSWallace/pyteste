@@ -114,8 +114,6 @@ class UpdateThread(QThread):
     finished = pyqtSignal()
 
     def run(self):
-        while True:
-            sleep(1)
         init()
         if os.environ.get('PYTESTEENV') != 'dev':
             update_providers()

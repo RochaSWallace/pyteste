@@ -98,7 +98,8 @@ class NewSussyToonsProvider(Base):
             response = requests.get(api_url, headers=self.headers)
             # JSON já vem direto, sem 'resultado'
             data = response.json()
-            
+            obra_id = data.get('obr_id', 'Desconhecido')
+            cap_numero = data.get('cap_numero', 'Desconhecido')
             print(f"[SussyToons] API retornou {len(data.get('cap_paginas', []))} páginas")
 
             def clean_path(p):
@@ -107,12 +108,16 @@ class NewSussyToonsProvider(Base):
             for i, pagina in enumerate(data.get('cap_paginas', [])):
                 try:
                     mime = pagina.get('mime')
-                    path = clean_path(pagina.get('path', ''))
+                    path = clean_path(pagina.get('path', 'false'))
                     src = clean_path(pagina.get('src', ''))
                     
                     if mime is not None:
                         # Novo formato CDN
                         full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
+                    elif path == 'false':
+                        # https://cdn.sussytoons.wtf/scans/1/obras/9003/capitulos/1/1.jpg
+                        # https://cdn.sussytoons.wtf/scans/1/obras/137600/capitulos/1/1.jpg
+                        full_url = f"https://cdn.sussytoons.wtf/scans/1/obras/{obra_id}/capitulos/{cap_numero}/{src}"
                     else:
                         # Formato antigo
                         full_url = f"{self.CDN}/{path}/{src}"
