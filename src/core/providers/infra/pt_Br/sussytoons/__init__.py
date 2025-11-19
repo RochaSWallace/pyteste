@@ -6,6 +6,7 @@ from typing import List
 from bs4 import BeautifulSoup
 from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
+from core.download.application.use_cases import DownloadUseCase
 
 class NewSussyToonsProvider(Base):
     name = 'New Sussy Toons'
@@ -114,7 +115,7 @@ class NewSussyToonsProvider(Base):
                     if mime is not None:
                         # Novo formato CDN
                         full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
-                    elif path == 'false':
+                    elif path == 'false' or path == '' or path is None or path.lower() == 'none':
                         # https://cdn.sussytoons.wtf/scans/1/obras/9003/capitulos/1/1.jpg
                         # https://cdn.sussytoons.wtf/scans/1/obras/137600/capitulos/1/1.jpg
                         full_url = f"https://cdn.sussytoons.wtf/scans/1/obras/{obra_id}/capitulos/{cap_numero}/{src}"
@@ -142,3 +143,7 @@ class NewSussyToonsProvider(Base):
         # Se chegou aqui, API falhou - retornar páginas vazias
         print("[SussyToons] ❌ Falha na API - retornando lista vazia")
         return Pages(ch.id, ch.number, ch.name, [])
+
+
+    def download(self, pages: Pages, fn: any, headers=None, cookies=None):
+            return DownloadUseCase().execute(pages=pages, fn=fn, headers=headers, cookies=cookies)
