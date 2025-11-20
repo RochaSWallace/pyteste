@@ -6,7 +6,6 @@ from typing import List
 from bs4 import BeautifulSoup
 from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
-from core.download.application.use_cases import DownloadUseCase
 
 class NewSussyToonsProvider(Base):
     name = 'New Sussy Toons'
@@ -143,7 +142,3 @@ class NewSussyToonsProvider(Base):
         # Se chegou aqui, API falhou - retornar páginas vazias
         print("[SussyToons] ❌ Falha na API - retornando lista vazia")
         return Pages(ch.id, ch.number, ch.name, [])
-
-
-    def download(self, pages: Pages, fn: any, headers=None, cookies=None):
-            return DownloadUseCase().execute(pages=pages, fn=fn, headers=headers, cookies=cookies)
