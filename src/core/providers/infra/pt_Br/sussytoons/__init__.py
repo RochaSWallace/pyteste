@@ -98,6 +98,7 @@ class NewSussyToonsProvider(Base):
             response = requests.get(api_url, headers=self.headers)
             # JSON já vem direto, sem 'resultado'
             data = response.json()
+            print(data)
             obra_id = data.get('obr_id', 'Desconhecido')
             cap_numero = data.get('cap_numero', 'Desconhecido')
             print(f"[SussyToons] API retornou {len(data.get('cap_paginas', []))} páginas")
@@ -115,12 +116,12 @@ class NewSussyToonsProvider(Base):
                         # Novo formato CDN
                         full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
                     elif path == 'false' or path == '' or path is None or path.lower() == 'none':
-                        # https://cdn.sussytoons.wtf/scans/1/obras/9003/capitulos/1/1.jpg
-                        # https://cdn.sussytoons.wtf/scans/1/obras/137600/capitulos/1/1.jpg
                         full_url = f"https://cdn.sussytoons.wtf/scans/1/obras/{obra_id}/capitulos/{cap_numero}/{src}"
                     else:
-                        # Formato antigo
-                        full_url = f"{self.CDN}/{path}/{src}"
+                        if 'jpg' in path.lower() or 'png' in path.lower() or 'jpeg' in path.lower() or 'webp' in path.lower():
+                           full_url = f"{self.CDN}/{path}"
+                        else:
+                            full_url = f"{self.CDN}/{path}/{src}"
                     
                     if full_url and full_url.startswith('http'):
                         images.append(full_url)

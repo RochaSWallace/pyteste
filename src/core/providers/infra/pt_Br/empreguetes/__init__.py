@@ -16,8 +16,8 @@ class EmpreguetesProvider(Base):
     domain = ['empreguetes.xyz']
 
     def __init__(self) -> None:
-        self.base = 'https://api.sussytoons.wtf'
-        self.CDN = 'https://cdn.sussytoons.site'
+        self.base = 'https://api2.sussytoons.wtf'
+        self.CDN = 'https://cdn.sussytoons.wtf'
         self.old = 'https://oldi.sussytoons.site/wp-content/uploads/WP-manga/data/'
         self.oldCDN = 'https://oldi.sussytoons.site/scans/1/obras'
         self.chapter = 'https://empreguetes.xyz/capitulo'
@@ -35,24 +35,41 @@ class EmpreguetesProvider(Base):
         }
     
     def getManga(self, link: str) -> Manga:
-        match = re.search(r'/obra/(\d+)', link)
-        id_value = match.group(1)
-        response = Http.get(f'{self.base}/obras/{id_value}', headers={'scan-id': 'empreguetes.xyz'}).json()
-        title = response['resultado']['obr_nome']
+        match = re.search(r'/obra/([^/?]+)', link)
+        if not match:
+            raise Exception("Slug da obra não encontrado na URL")
+            
+        slug = match.group(1)
+            
+            # Nova API usa slug ao invés de ID
+        api_url = f'{self.base}/obras/{slug}'
+        response = requests.get(api_url, headers={'scan-id': 'empreguetes.xyz'})
+        data = response.json()
+        title = data.get('obr_nome', 'Título Desconhecido')
         return Manga(link, title)
 
     def getChapters(self, id: str) -> List[Chapter]:
         try:
-            match = re.search(r'/obra/(\d+)', id)
-            id_value = match.group(1)
-            response = Http.get(f'{self.base}/obras/{id_value}', headers={'scan-id': 'empreguetes.xyz'}).json()
-            title = response['resultado']['obr_nome']
-            list = []
-            for ch in response['resultado']['capitulos']:
-                list.append(Chapter([id_value, ch['cap_id']], ch['cap_nome'], title))
-            return list
+            match = re.search(r'/obra/([^/?]+)', id)
+            if not match:
+                raise Exception("Slug da obra não encontrado")
+                
+            slug = match.group(1)
+            
+            # Nova API usa slug ao invés de ID
+            api_url = f'{self.base}/obras/{slug}'
+            response = requests.get(api_url, headers={'scan-id': 'empreguetes.xyz'})
+            data = response.json()
+            
+            title = data.get('obr_nome', 'Título Desconhecido')
+            chapters_list = []
+            for ch in data.get('capitulos', []):
+                # Agora armazena [slug, cap_id] para manter compatibilidade
+                chapters_list.append(Chapter([slug, ch['cap_id']], ch['cap_nome'], title))
+            return chapters_list
         except Exception as e:
-            print(e)
+            print(f"[SussyToons] Erro em getChapters: {e}")
+            return []
 
     def get_Pages(self, id, sleep, background=False):
         async def get_Pages_driver():
@@ -121,60 +138,60 @@ class EmpreguetesProvider(Base):
     
     def getPages(self, ch: Chapter) -> Pages:
         images = []
-        base_delay = 1
-        max_delay = 30
-        max_attempts = 5 
-        attempt = 0
         
         try:
-            # Adiciona o header scan-id específico para o Empreguetes
+            # Usar API com requests
+            api_url = f"{self.base}/capitulos/{ch.id[1]}"
+            print(f"[SussyToons] Chamando API: {api_url}")
+            
             headers_with_scan_id = {**self.headers, 'scan-id': 'empreguetes.xyz'}
             response = requests.get(f"{self.base}/capitulos/{ch.id[1]}", headers=headers_with_scan_id, timeout=30)
-            response.raise_for_status()
-
-            resultado = response.json()['resultado']
-            print(resultado)
+            # JSON já vem direto, sem 'resultado'
+            data = response.json()
+            print(data)
+            obra_id = data.get('obr_id', 'Desconhecido')
+            cap_numero = data.get('cap_numero', 'Desconhecido')
 
             def clean_path(p):
-                return p.strip('/')
+                return p.strip('/') if p else ''
 
-            images = []
-            for pagina in resultado['cap_paginas']:
-                print(pagina)
-                mime = pagina.get('mime')
-                if mime is not None:
-                    raise Exception(f"Mime diferente de None: {mime}")
-                path = clean_path(pagina.get('path', ''))
-                src = clean_path(pagina.get('src', ''))
-                full_url = f"{self.CDN}/{path}/{src}"
-                images.append(full_url)
-
-            return Pages(ch.id, ch.number, ch.name, images)
-        except Exception:
-            while attempt < max_attempts:
+            for i, pagina in enumerate(data.get('cap_paginas', [])):
                 try:
-                    current_delay = min(base_delay * math.pow(2, attempt), max_delay)
+                    mime = pagina.get('mime')
+                    path = clean_path(pagina.get('path', 'false'))
+                    src = clean_path(pagina.get('src', ''))
                     
-                    print(f"Attempt {attempt + 1} - Using {current_delay} seconds delay")
-                    
-                    html = self.get_Pages(
-                        id=f'{self.webBase}/capitulo/{ch.id[1]}',
-                        sleep=current_delay,
-                        background=attempt > 1 
-                    )
-                    
-                    soup = BeautifulSoup(html, 'html.parser')
-                    images = [img.get('src') for img in soup.select('img.chakra-image.css-8atqhb')]
-                    
-                    if images:
-                        print("Successfully fetched images")
-                        break
+                    if mime is not None:
+                        # Novo formato CDN
+                        full_url = f"https://cdn.sussytoons.site/wp-content/uploads/WP-manga/data/{src}"
+                        print(1)
+                    elif path == 'false' or path == '' or path is None or path.lower() == 'none':
+                        full_url = f"https://cdn.sussytoons.wtf/scans/3/obras/{obra_id}/capitulos/{cap_numero}/{src}"
+                        print(2)
                     else:
-                        print("No images found, retrying...")
-
+                        # Formato antigo
+                        if 'jpg' in path.lower() or 'png' in path.lower() or 'jpeg' in path.lower() or 'webp' in path.lower():
+                           full_url = f"{self.CDN}/{path}"
+                        else:
+                            full_url = f"{self.CDN}/{path}/{src}"
+                    
+                    if full_url and full_url.startswith('http'):
+                        if ' ' in full_url:
+                            full_url = full_url.replace(' ', '%20')
+                        images.append(full_url)
+                        print(f"[Empreguetes] Página {i+1}: {full_url}")
+                    
                 except Exception as e:
-                    print(f"Attempt {attempt + 1} failed: {str(e)}")
+                    continue
+            
+            if images:
+                return Pages(ch.id, ch.number, ch.name, images)
+            else:
+                print("[Empreguetes] ⚠️ Nenhuma página válida encontrada")
                 
-                attempt += 1
+        except Exception as e:
+            print(f"[Empreguetes] ❌ Erro na API: {e}")
 
-            return Pages(ch.id, ch.number, ch.name, images)
+        # Se chegou aqui, API falhou - retornar páginas vazias
+        print("[Empreguetes] ❌ Falha na API - retornando lista vazia")
+        return Pages(ch.id, ch.number, ch.name, [])
