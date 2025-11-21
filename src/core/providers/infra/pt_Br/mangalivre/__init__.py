@@ -3,10 +3,10 @@ from core.providers.infra.template.wordpress_madara import WordPressMadara
 class MangaLivreProvider(WordPressMadara):
     name = 'Manga Livre'
     lang = 'pt_Br'
-    domain = ['mangalivre.ru']
+    domain = ['mangalivre.tv']
 
     def __init__(self):
-        self.url = 'https://mangalivre.ru/manga/kagurabachi/'
+        self.url = 'https://mangalivre.tv/'
 
         self.path = ''
         

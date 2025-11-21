@@ -126,6 +126,13 @@ class Cloudflare(BypassRepository):
                             if(cookie.name == 'cf_clearance'):
                                 cookies = {'cf_clearance': cookie.value}
                         insert_request(RequestData(domain=onlydomain, headers=headers, cookies=cookies))
+                    
+                    # Reload para mangalivre.tv
+                    if "mangalivre.tv" in url:
+                        await page.reload()
+                        sleep(7)
+                        page_content = await page.get_content()
+                    
                     content = page_content 
                     break
             browser.stop()
@@ -191,6 +198,23 @@ class Cloudflare(BypassRepository):
                                 if(cookie.name == 'cf_clearance'):
                                     cookies = {'cf_clearance': cookie.value}
                             insert_request(RequestData(domain=onlydomain, headers=headers, cookies=cookies))
+                        
+                        # Reload para mangalivre.tv
+                        if "mangalivre.tv" in url:
+                            await page.reload()
+                            sleep(7)
+                            fetch_content = await page.evaluate(f'''
+                                fetch("{url}")''' + '''.then(response => response.arrayBuffer()).then(buffer => {
+                                    let binary = '';
+                                    let bytes = new Uint8Array(buffer);
+                                    let len = bytes.byteLength;
+                                    for (let i = 0; i < len; i++) {
+                                        binary += String.fromCharCode(bytes[i]);
+                                    }
+                                    return btoa(binary);
+                                });
+                            ''', await_promise=True)
+                        
                         content = base64.b64decode(fetch_content)
                         break
                 except Exception as e:
@@ -254,6 +278,23 @@ class Cloudflare(BypassRepository):
                                 if(cookie.name == 'cf_clearance'):
                                     cookies = {'cf_clearance': cookie.value}
                             insert_request(RequestData(domain=onlydomain, headers=headers, cookies=cookies))
+                        
+                        # Reload para mangalivre.tv
+                        if "mangalivre.tv" in url:
+                            await page.reload()
+                            sleep(7)
+                            fetch_content = await page.evaluate(f'''
+                                fetch("{url}", {{method: "POST"}})''' + '''.then(response => response.arrayBuffer()).then(buffer => {
+                                    let binary = '';
+                                    let bytes = new Uint8Array(buffer);
+                                    let len = bytes.byteLength;
+                                    for (let i = 0; i < len; i++) {
+                                        binary += String.fromCharCode(bytes[i]);
+                                    }
+                                    return btoa(binary);
+                                });
+                            ''', await_promise=True)
+                        
                         content = base64.b64decode(fetch_content)
                         break
                 except Exception as e:
