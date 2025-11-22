@@ -130,7 +130,7 @@ class Cloudflare(BypassRepository):
                     # Reload para mangalivre.tv
                     if "mangalivre.tv" in url:
                         await page.reload()
-                        sleep(7)
+                        sleep(10)
                         page_content = await page.get_content()
                     
                     content = page_content 
