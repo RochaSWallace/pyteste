@@ -217,7 +217,7 @@ class VerdinhaProvider(Base):
                     
                     if mime is not None:
                         # Novo formato CDN
-                        full_url = f"https://cdn.verdinha.site/wp-content/uploads/WP-manga/data/{src}"
+                        full_url = f"https://cdn.verdinha.wtf/wp-content/uploads/WP-manga/data/{src}"
                     elif path == 'false' or path == '' or path is None or path.lower() == 'none':
                         full_url = f"https://cdn.verdinha.wtf/scans/1/obras/{obra_id}/capitulos/{cap_numero}/{src}"
                     else:
