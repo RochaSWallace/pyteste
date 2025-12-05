@@ -11,10 +11,10 @@ from urllib.parse import urljoin, urlencode, urlparse, urlunparse, parse_qs
 class TiraninhaProvider(WordPressMadara):
     name = 'Tiraninha'
     lang = 'pt_Br'
-    domain = ['www.tiraninha.baby']
+    domain = ['tiraninha.baby']
 
     def __init__(self):
-        self.url = 'https://www.tiraninha.baby/'
+        self.url = 'https://tiraninha.baby/'
 
         self.path = ''
         

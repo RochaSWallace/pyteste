@@ -76,7 +76,7 @@ class MangaLivreProvider(WordPressMadara):
             else:
                 # Se timeout, retorna o que tiver
                 content = await page.get_content()
-            
+            sleep(15)
             browser.stop()
         uc.loop().run_until_complete(get_page())
         return content
