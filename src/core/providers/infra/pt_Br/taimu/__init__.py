@@ -10,16 +10,16 @@ from urllib.parse import urljoin
 import re
 import json
 
-class YugenProvider(WordpressEtoshoreMangaTheme):
-    name = 'Yugen mangas'
+class TaimuProvider(WordpressEtoshoreMangaTheme):
+    name = 'Taimu mangas'
     lang = 'pt-Br'
-    domain = ['yugenmangasbr.dxtg.online']
+    domain = ['taimumangas.rzword.xyz']
 
     def __init__(self) -> None:
-        self.url = 'https://yugenmangasbr.dxtg.online'
-        self.link = 'https://yugenmangasbr.dxtg.online'
-        self.cdn = 'https://api.yugenweb.com/media/'
-        self.api = 'https://api.yugenweb.com/'
+        self.url = 'https://taimumangas.rzword.xyz'
+        self.link = 'https://taimumangas.rzword.xyz'
+        self.cdn = 'https://api.taimumangas.com/media/'
+        self.api = 'https://api.taimumangas.com/'
         
         self.get_title = 'h1'
         self.get_chapters_list = 'div.grid.gap-2'
