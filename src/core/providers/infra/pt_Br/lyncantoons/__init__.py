@@ -9,8 +9,6 @@ from core.__seedwork.infra.http.contract.http import Response
 from core.providers.domain.entities import Chapter, Pages, Manga
 from urllib.parse import urljoin, urlencode, urlparse, urlunparse, parse_qs
 import os
-import asyncio
-import nodriver as uc
 
 class LycanToonsProvider(WordPressMadara):
     name = 'Lycan Toons'
@@ -31,53 +29,8 @@ class LycanToonsProvider(WordPressMadara):
         # self.api_chapters = 'https://nexustoons.site/api/'
     
     def getManga(self, link: str) -> Manga:
-        print(f"\n{'='*60}")
-        print(f"[LycanToons getManga] Iniciando para: {link}")
-        print(f"{'='*60}")
-        
         response = Http.get(link, timeout=getattr(self, 'timeout', None))
-        
         content = response.content if isinstance(response.content, str) else response.content.decode('utf-8', errors='ignore')
-        
-        # Salva o HTML completo em arquivo para análise
-        try:
-            log_dir = "logs_lycantoons"
-            os.makedirs(log_dir, exist_ok=True)
-            log_file = os.path.join(log_dir, "getManga_response.html")
-            with open(log_file, 'w', encoding='utf-8') as f:
-                f.write(content)
-        except Exception as e:
-            print(f"[LycanToons getManga] ✗ Erro ao salvar log: {e}")
-        
-        if 'self.__next_f' in content:
-            # Mostra contexto onde aparece
-            idx = content.find('self.__next_f')
-        else:
-            print(f"[LycanToons getManga] ✗ 'self.__next_f' NÃO encontrado")
-        
-            
-        if 'Book' in content:
-            # Mostra contexto
-            idx = content.find('Book')
-            sample = content[max(0, idx-200):idx+300]
-            print(sample)
-            
-            # Extrai e salva a região completa do JSON
-            try:
-                # Procura o bloco JSON completo que contém Book
-                start = max(0, idx - 1000)
-                end = min(len(content), idx + 2000)
-                json_region = content[start:end]
-                
-                log_file = os.path.join("logs_lycantoons", "book_json_region.txt")
-                with open(log_file, 'w', encoding='utf-8') as f:
-                    f.write("=== REGIÃO COMPLETA DO BOOK ===\n")
-                    f.write(json_region)
-            except Exception as e:
-                print(f"[LycanToons getManga] ✗ Erro ao salvar região: {e}")
-                
-        else:
-            print(f"[LycanToons getManga] ✗ 'Book' NÃO encontrado")
         
         title = None
         
@@ -292,83 +245,77 @@ class LycanToonsProvider(WordPressMadara):
     
     def getPages(self, ch: Chapter) -> Pages:
         """
-        Usa nodriver para interceptar as requisições de imagens do CDN.
-        As imagens seguem o padrão: https://cdn.lycantoons.com/file/lycantoons/{manga-slug}/{chapter}/page-{n}.jpg
+        Extrai as URLs das imagens do JSON embutido no HTML do Next.js.
+        Busca pelo padrão: self.__next_f.push([1,"..."]) que contém imageUrls
         """
         try:
             ch_number = re.findall(r'\d+\.?\d*', str(ch.number))
             number = ch_number[0] if ch_number else ch.number
             
-            img_urls = asyncio.run(self._get_pages_with_nodriver(ch.id, number))
+            # Headers seguindo o padrão do fetch
+            headers = {
+                'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                'cache-control': 'max-age=0',
+                'priority': 'u=0, i',
+                'sec-ch-ua': '"Google Chrome";v="143", "Chromium";v="143", "Not A(Brand";v="24"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'sec-fetch-dest': 'document',
+                'sec-fetch-mode': 'navigate',
+                'sec-fetch-site': 'same-origin',
+                'sec-fetch-user': '?1',
+                'upgrade-insecure-requests': '1',
+                'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36'
+            }
+            
+            # Faz requisição HTTP com headers customizados
+            response = requests.get(ch.id, headers=headers, timeout=30)
+            content = response.text
+            
+            img_urls = []
+            
+            # Busca diretamente pelo array imageUrls no HTML
+            # O padrão está em: self.__next_f.push([1,"a:[[...],[...{\"imageUrls\":[...]}]]\n"])
+            # Tenta vários padrões para encontrar as URLs
+            
+            # Padrão 1: Busca imageUrls com aspas escapadas ou não
+            patterns = [
+                r'"imageUrls":\s*\[([^\]]+)\]',  # Padrão genérico
+                r'\\"imageUrls\\":\s*\[([^\]]+)\]',  # Com escapes
+            ]
+            
+            urls_str = None
+            for pattern in patterns:
+                urls_match = re.search(pattern, content)
+                if urls_match:
+                    urls_str = urls_match.group(1)
+                    break
+            
+            if urls_str:
+                # Extrai todas as URLs do conteúdo encontrado
+                # Tenta com diferentes padrões de escape
+                url_patterns = [
+                    r'"(https://cdn\.lycantoons\.com/file/[^"]+)"',  # URLs normais
+                    r'\\"(https://cdn\.lycantoons\.com/file/[^\\]+)\\"',  # URLs com escape
+                    r'(https://cdn\.lycantoons\.com/file/lycantoons/[^\s,"\]]+)',  # URLs sem aspas
+                ]
+                
+                for url_pattern in url_patterns:
+                    img_urls = re.findall(url_pattern, urls_str)
+                    if img_urls:
+                        # Remove barras invertidas no final das URLs (artefatos de escape)
+                        img_urls = [url.rstrip('\\') for url in img_urls]
+                        break
             
             return Pages(ch.id, number, ch.name, img_urls if img_urls else [])
                 
         except Exception as e:
-            print(f"[LycanToons] Erro ao buscar imagens: {e}")
+            print(f"[LycanToons getPages] ✗ Erro ao buscar imagens: {e}")
+            import traceback
+            traceback.print_exc()
             number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
             return Pages(ch.id, number, ch.name, [])
-    
-    async def _get_pages_with_nodriver(self, chapter_url: str, chapter_number: str) -> List[str]:
-        """
-        Usa nodriver para capturar as URLs reais das imagens interceptando requisições de rede.
-        As imagens são servidas do CDN e depois convertidas em blob URLs no navegador.
-        """
-        img_urls = {}
-        browser = None
-        
-        try:
-            browser = await uc.start(headless=True)
-            page = browser.main_tab
-            
-            async def request_handler(event):
-                url = event.request.url
-                if 'cdn.lycantoons.com' in url or 'lycantoons.com/file' in url:
-                    page_match = re.search(r'[/\-](\d+)\.(jpg|jpeg|png|webp)', url)
-                    if page_match:
-                        page_num = int(page_match.group(1))
-                        if page_num not in img_urls:
-                            img_urls[page_num] = url
-            
-            async def response_handler(event):
-                url = event.response.url
-                if 'cdn.lycantoons.com' in url or 'lycantoons.com/file' in url:
-                    content_type = ''
-                    if hasattr(event.response, 'headers'):
-                        for header in event.response.headers.items():
-                            if header[0].lower() == 'content-type':
-                                content_type = header[1]
-                                break
-                    
-                    if 'image/' in content_type.lower():
-                        page_match = re.search(r'[/\-](\d+)\.(jpg|jpeg|png|webp)', url)
-                        if page_match:
-                            page_num = int(page_match.group(1))
-                            if page_num not in img_urls:
-                                img_urls[page_num] = url
-            
-            page.add_handler(uc.cdp.network.RequestWillBeSent, request_handler)
-            page.add_handler(uc.cdp.network.ResponseReceived, response_handler)
-            
-            await page.get(chapter_url)
-            await asyncio.sleep(3)
-            
-            await page.evaluate('window.scrollTo({top: 0, behavior: "smooth"})')
-            await asyncio.sleep(1)
-            
-            if img_urls:
-                sorted_pages = sorted(img_urls.items())
-                return [url for page_num, url in sorted_pages]
-            else:
-                return []
-            
-        except Exception as e:
-            print(f"[LycanToons] Erro no nodriver: {e}")
-            return []
-        finally:
-            if browser:
-                browser.stop()
-        
-        return []
     
     def _get_chapters_ajax(self, manga_id):
         # https://nexustoons.site/ajax/load-chapters/?item_slug=missoes-na-vida-real&page=1&sort=desc&q=
@@ -387,7 +334,6 @@ class LycanToonsProvider(WordPressMadara):
             chapter_links = soup.select('a')
             
             if not chapter_links:
-                print(f"[NEXUSSCAN] Nenhum capítulo encontrado na página {page}")
                 break
             
             # Detecta repetições para parar o loop
@@ -421,14 +367,12 @@ class LycanToonsProvider(WordPressMadara):
             
             # Se mais de 80% são repetições ou nenhum novo, para o loop
             if len(chapter_links) > 0 and (repeated_count >= len(chapter_links) * 0.8 or new_chapters_count == 0):
-                print("[NEXUSSCAN] Parando: muitas repetições detectadas")
                 break
             
             page += 1
             
             # Proteção contra loop infinito
             if page > 100:
-                print("[NEXUSSCAN] Limite de páginas atingido (100)")
                 break
         
         if all_chapters:
