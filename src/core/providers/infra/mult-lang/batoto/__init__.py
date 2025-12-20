@@ -45,6 +45,11 @@ class BatotoProvider(Base):
                     break
         if img_https_value:
             img_https_list = json.loads(img_https_value)
-            list = img_https_list
+            # Corrige URLs do servidor 'k' que podem estar com problemas
+            # Substitui '//k' por '//n' em URLs que contêm '.mb'
+            for url in img_https_list:
+                if url and '//k' in url and '.mb' in url:
+                    url = url.replace('//k', '//n')
+                list.append(url)
         return Pages(ch.id, ch.number, ch.name, list)
 

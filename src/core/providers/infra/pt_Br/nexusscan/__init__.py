@@ -64,7 +64,7 @@ class NexusScanProvider(WordPressMadara):
     
     def getPages(self, ch: Chapter) -> Pages:
         try:
-            # Método 1: Captura do script JSON (método principal)
+            # Método 1: Captura do script JSON com id="page-data"
             uri = urljoin(self.url, ch.id)
             response = Http.get(uri, timeout=getattr(self, 'timeout', None))
             soup = BeautifulSoup(response.content, 'html.parser')
@@ -82,11 +82,30 @@ class NexusScanProvider(WordPressMadara):
                     
                     if img_urls:
                         number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
+                        print(f"[NEXUSSCAN] ✓ {len(img_urls)} páginas obtidas via script#page-data")
                         return Pages(ch.id, number, ch.name, img_urls)
                 except json.JSONDecodeError as e:
-                    print(f"[NEXUSSCAN] ✗ Erro ao parsear JSON do script: {e}")
+                    print(f"[NEXUSSCAN] ✗ Erro ao parsear JSON do script#page-data: {e}")
             
-            # Método 2: Fallback - API (método antigo)
+            # Método 2: Captura do script JSON com id="stream-blob-source" (formato novo)
+            stream_blob_script = soup.find('script', {'id': 'stream-blob-source', 'type': 'application/json'})
+            
+            if stream_blob_script and stream_blob_script.string:
+                try:
+                    # Parse do JSON
+                    pages_data = json.loads(stream_blob_script.string.strip())
+                    
+                    # Extrai as URLs das imagens ordenadas por page_number
+                    img_urls = [page['image_url'] for page in sorted(pages_data, key=lambda x: x['page_number'])]
+                    
+                    if img_urls:
+                        number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
+                        print(f"[NEXUSSCAN] ✓ {len(img_urls)} páginas obtidas via script#stream-blob-source")
+                        return Pages(ch.id, number, ch.name, img_urls)
+                except json.JSONDecodeError as e:
+                    print(f"[NEXUSSCAN] ✗ Erro ao parsear JSON do script#stream-blob-source: {e}")
+            
+            # Método 3: Fallback - API (método antigo)
             uri = str(ch.id)
             if uri.startswith("/manga/"):
                 uri = uri.replace("/manga/", "page-data/", 1)
