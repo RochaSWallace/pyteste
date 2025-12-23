@@ -2,6 +2,7 @@ from core.providers.infra.template.wordpress_madara import WordPressMadara
 import re
 import json
 import requests
+import base64
 from typing import List
 from bs4 import BeautifulSoup
 from core.__seedwork.infra.http import Http
@@ -173,6 +174,28 @@ class NexusScanProvider(WordPressMadara):
             for link in chapter_links:
                 href = link.get('href', '').strip()
                 chapter_number = link.get('data-chapter-number', '').strip()
+                
+                # Decodifica base64 se o href usar window.atob()
+                # Formato: javascript:window.location.href=window.atob(base64_string) OU window.atob('base64_string')
+                if 'window.atob(' in href:
+                    try:
+                        # Tenta extrair com aspas simples primeiro
+                        base64_match = re.search(r"window\.atob\('([^']+)'\)", href)
+                        if not base64_match:
+                            # Tenta sem aspas (formato direto)
+                            base64_match = re.search(r"window\.atob\(([^)]+)\)", href)
+                        
+                        if base64_match:
+                            base64_string = base64_match.group(1)
+                            # Decodifica base64 para obter o caminho relativo
+                            decoded_path = base64.b64decode(base64_string).decode('utf-8')
+                            # O caminho já vem completo com /leitor/...
+                            href = decoded_path
+                            print(f"[NEXUSSCAN] Link decodificado: {decoded_path}")
+                    except Exception as e:
+                        print(f"[NEXUSSCAN] ⚠️ Erro ao decodificar base64 do capítulo: {e}")
+                        print(f"[NEXUSSCAN] href original: {href}")
+                        continue
                 
                 # Remove caracteres de escape
                 chars_to_remove = ['"', '\\n', '\\', '\r', '\t', "'"]

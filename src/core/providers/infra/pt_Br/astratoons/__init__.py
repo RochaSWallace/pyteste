@@ -12,6 +12,8 @@ from core.providers.domain.entities import Chapter, Pages, Manga
 from core.download.domain.dowload_entity import Chapter as DownloadedChapter
 from core.config.img_conf import get_config
 from core.__seedwork.infra.utils.sanitize_folder import sanitize_folder_name
+import nodriver as uc
+import asyncio
 
 
 class AstraToonsProvider(WordpressEtoshoreMangaTheme):
@@ -86,37 +88,81 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
         return list
 
     def getPages(self, ch: Chapter) -> Pages:
-        response = Http.get(ch.id)
-        soup = BeautifulSoup(response.content, 'html.parser')
+        """
+        Obtém páginas interceptando requisições de rede via CDP.
         
-        # Buscar container de imagens usando self.get_div_page
-        images_container = soup.select_one(self.get_div_page)
+        O site faz fetch de URLs como /proxy/image/?expires=...&signature=...
+        antes de converter para blob. Interceptamos essas requisições para
+        capturar as URLs reais.
+        """
+        async def _get_pages_async():
+            intercepted_urls = []
+            
+            try:
+                # Configura nodriver para VPS/root
+                config = uc.Config(
+                    headless=True,
+                    sandbox=False,
+                    browser_args=[
+                        "--no-sandbox",
+                        "--disable-setuid-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--disable-gpu"
+                    ]
+                )
+                
+                browser = await uc.start(config)
+                page = await browser.get(ch.id)
+                
+                # Habilita interceptação de rede via CDP
+                await page.send(uc.cdp.network.enable())
+                
+                # Handler para capturar requisições
+                def request_handler(event):
+                    if isinstance(event, uc.cdp.network.RequestWillBeSent):
+                        url = event.request.url
+                        # Captura URLs de imagens do proxy
+                        if '/proxy/image/' in url:
+                            intercepted_urls.append(url)
+                
+                # Registra handler
+                page.add_handler(uc.cdp.network.RequestWillBeSent, request_handler)
+                
+                # Aguarda carregamento das imagens
+                await asyncio.sleep(5)
+                
+                # Remove handler
+                page.remove_handler(uc.cdp.network.RequestWillBeSent, request_handler)
+                
+                print(f"[AstraToons] ✅ Encontradas {len(intercepted_urls)} imagens")
+                
+                # Fecha browser
+                try:
+                    await browser.stop()
+                except:
+                    pass
+                
+                return intercepted_urls
+            
+            except Exception as e:
+                print(f"[AstraToons] ❌ Erro ao obter páginas: {e}")
+                import traceback
+                traceback.print_exc()
+                try:
+                    if 'browser' in locals() and browser:
+                        await browser.stop()
+                except:
+                    pass
+                return []
         
-        if not images_container:
-            print(f"[AstraToons] Container {self.get_div_page} não encontrado")
-            return Pages(ch.id, ch.number, ch.name, [])
-        
-        # Buscar todas as imagens usando self.get_pages
-        image_elements = images_container.select(self.get_pages)
-        
-        if not image_elements:
-            print(f"[AstraToons] Nenhuma imagem encontrada com seletor {self.get_pages}")
-            return Pages(ch.id, ch.number, ch.name, [])
-        
-        list = []
-        for img in image_elements:
-            img_src = img.get('src')
-            if img_src:
-                # URLs já vêm completas (https://new.astratoons.com/proxy/image/...)
-                list.append(img_src)
-        
-        print(f"[AstraToons] Encontradas {len(list)} páginas")
-        return Pages(ch.id, ch.number, ch.name, list)
+        img_urls = asyncio.run(_get_pages_async())
+        return Pages(ch.id, ch.number, ch.name, img_urls)
 
     def download(self, pages: Pages, fn: any, headers=None, cookies=None):
         """
-        Download customizado que extrai e usa o referrer para imagens protegidas.
-        URLs vêm no formato: "REFERRER|URL_DA_IMAGEM"
+        Download das URLs interceptadas de /proxy/image/
+        
+        As URLs já vêm prontas do getPages via interceptação de rede.
         """
         title = sanitize_folder_name(pages.name)
         config = get_config()
@@ -128,38 +174,23 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
         files = []
         total_pages = len(pages.pages)
         
-        for idx, page_data in enumerate(pages.pages, start=1):
+        for idx, img_url in enumerate(pages.pages, start=1):
             try:
-                print(f"[AstraToons] [{idx}/{total_pages}] Baixando...")
-                
-                # Extrai referrer e URL da imagem
-                if '|' in page_data:
-                    referrer, img_url = page_data.split('|', 1)
-                else:
-                    # Fallback: sem referrer
-                    referrer = pages.id
-                    img_url = page_data
-                
-                # Headers com referrer obrigatório
+                # Headers para imitar o navegador
                 download_headers = {
-                    "accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-                    "accept-language": "pt-BR,pt;q=0.7",
-                    "referer": referrer,
-                    "sec-ch-ua": '"Brave";v="143", "Chromium";v="143", "Not A(Brand);v="24"',
-                    "sec-ch-ua-mobile": "?0",
-                    "sec-ch-ua-platform": '"Windows"',
-                    "sec-fetch-dest": "image",
-                    "sec-fetch-mode": "no-cors",
-                    "sec-fetch-site": "same-origin",
-                    "sec-gpc": "1",
-                    "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                    'accept': '*/*',
+                    'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'referer': pages.id,  # URL do capítulo
+                    'sec-fetch-dest': 'empty',
+                    'sec-fetch-mode': 'cors',
+                    'sec-fetch-site': 'same-origin',
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
                 
-                # Download da imagem
                 response = requests.get(img_url, headers=download_headers, timeout=30)
                 response.raise_for_status()
                 
-                # Salva imagem
+                # Abre e salva imagem
                 img = Image.open(BytesIO(response.content))
                 if img.mode in ("RGBA", "P"):
                     img = img.convert("RGB")
@@ -168,15 +199,11 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
                 img.save(file_path, quality=100, dpi=(72, 72))
                 files.append(file_path)
                 
-                print(f"  ✓ Salvo: {os.path.basename(file_path)}")
-                
-                # Progresso
                 if fn is not None:
                     fn(math.ceil(idx * 100) / total_pages)
-                
+                    
             except Exception as e:
-                print(f"  ✗ Erro ao baixar página {idx}: {e}")
+                print(f"[AstraToons] ✗ Erro na imagem {idx}: {str(e)[:60]}")
                 continue
         
-        print(f"[AstraToons] Download concluído: {len(files)}/{total_pages} imagens")
         return DownloadedChapter(pages.number, files)
