@@ -44,13 +44,25 @@ class NexusScanProvider(WordPressMadara):
         element = data.pop()
         title = element['content'].strip() if 'content' in element.attrs else element.text.strip()
 
+        chapters_data = []
+        
+        # Tenta primeiro buscar via API JSON (novo formato)
         try:
-            data = self._get_chapters_ajax(id)
-        except Exception as e:
-            raise ValueError(f"Erro ao buscar capítulos via AJAX: {e}")
+            ajax_url = self._extract_ajax_url(response.content)
+            if ajax_url:
+                chapters_data = self._get_chapters_api(ajax_url)
+        except Exception:
+            pass
+        
+        # Se não conseguiu via API, tenta via AJAX HTML (formato antigo)
+        if not chapters_data:
+            try:
+                chapters_data = self._get_chapters_ajax(id)
+            except Exception as e:
+                raise ValueError(f"Erro ao buscar capítulos via AJAX: {e}")
 
         chs = []
-        for el in data:
+        for el in chapters_data:
             ch_id = el.get("href", "").strip()
             ch_number = el.get("data-chapter-number", "").strip()
             chars_to_remove = ['"', '\\n', '\\', '\r', '\t', "'"]
@@ -63,10 +75,131 @@ class NexusScanProvider(WordPressMadara):
         chs.reverse()
         return chs
     
+    def _get_chapters_api(self, ajax_url):
+        """
+        Busca capítulos via API JSON (novo formato com URL criptografada).
+        Retorna lista de dicionários com 'href' e 'data-chapter-number'.
+        """
+        page = 1
+        all_chapters = []
+        seen_hrefs = set()
+        
+        while True:
+            # Monta a URI com a URL criptografada
+            base_url = ajax_url.rstrip('/')
+            uri = f'https://nexustoons.site{base_url}/?page={page}&sort=desc&q='
+            
+            print(f"[NEXUSSCAN API] Requisitando página {page}: {uri}")
+            response = Http.get(uri, timeout=getattr(self, 'timeout', None))
+            try:
+                content = response.content if isinstance(response.content, str) else response.content.decode('utf-8', errors='ignore')
+                json_data = json.loads(content)
+                
+                # Verifica se é o formato esperado
+                if not isinstance(json_data, dict):
+                    print(f"[NEXUSSCAN API] ✗ Resposta não é um objeto JSON válido")
+                    break
+                
+                if 'chapters' not in json_data:
+                    print(f"[NEXUSSCAN API] ✗ Campo 'chapters' não encontrado no JSON")
+                    print(f"[NEXUSSCAN API] Campos disponíveis: {list(json_data.keys())}")
+                    break
+                
+                chapters_list = json_data.get('chapters', [])
+                print(f"[NEXUSSCAN API] ✓ Encontrados {len(chapters_list)} capítulos na página {page}")
+                
+                if not chapters_list:
+                    if page == 1:
+                        print("[NEXUSSCAN API] ⚠️ Nenhum capítulo encontrado na primeira página")
+                    break
+                
+                for chapter_obj in chapters_list:
+                    ch_url = chapter_obj.get('url', '').strip()
+                    ch_number = str(chapter_obj.get('number', '')).strip()
+                    
+                    if not ch_url or not ch_number:
+                        continue
+                    
+                    # Verifica duplicatas
+                    if ch_url in seen_hrefs:
+                        continue
+                    
+                    seen_hrefs.add(ch_url)
+                    
+                    # Monta URL completa se necessário
+                    if not ch_url.startswith('http'):
+                        ch_url = urljoin(self.url, ch_url)
+                    
+                    all_chapters.append({
+                        'href': ch_url,
+                        'data-chapter-number': ch_number
+                    })
+                
+                # Verifica paginação
+                pagination = json_data.get('pagination', {})
+                if not pagination.get('has_next', False):
+                    break
+                
+                page += 1
+                
+                if page > 100:
+                    break
+                    
+            except (json.JSONDecodeError, Exception):
+                break
+        
+        if all_chapters:
+            return all_chapters
+        else:
+            raise ValueError('No chapters found via API!')
+    
+    def _extract_ajax_url(self, html_content):
+        """
+        Extrai a URL criptografada do AJAX para CHAPTERS da página.
+        Testa cada URL encontrada para identificar qual retorna a lista de capítulos.
+        """
+        content = html_content if isinstance(html_content, str) else html_content.decode('utf-8', errors='ignore')
+        
+        # Procura por TODAS URLs no formato /api/v1/{token} (token Django)
+        # Formato pode ser: /api/v1/.eJ... (antigo) ou /api/v1/eyJ... (novo)
+        # Padrão: /api/v1/{base64}:{timestamp}:{signature}/
+        pattern = r'/api/v1/\.?[A-Za-z0-9_-]+:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+/'
+        matches = re.findall(pattern, content)
+        
+        if matches:
+            # Remove duplicatas mantendo a ordem
+            unique_matches = []
+            seen = set()
+            for match in matches:
+                if match not in seen:
+                    unique_matches.append(match)
+                    seen.add(match)
+            
+            # Testa cada URL para encontrar a que retorna capítulos
+            for idx, match in enumerate(unique_matches, 1):
+                try:
+                    test_uri = f'https://nexustoons.site{match}?page=1&sort=desc&q='
+                    response = Http.get(test_uri, timeout=getattr(self, 'timeout', None))
+                    test_content = response.content if isinstance(response.content, str) else response.content.decode('utf-8', errors='ignore')
+                    test_data = json.loads(test_content)
+                    
+                    # Verifica se retorna lista de capítulos
+                    if isinstance(test_data, dict) and 'chapters' in test_data:
+                        return match
+                        
+                except Exception:
+                    continue
+            
+            print("[NEXUSSCAN] ⚠️ Nenhuma URL retornou capítulos após testes")
+        
+        print("[NEXUSSCAN] ⚠️ URL criptografada não encontrada, usando formato antigo")
+        return None
+    
     def getPages(self, ch: Chapter) -> Pages:
         try:
             # Método 1: Captura do script JSON com id="page-data"
             uri = urljoin(self.url, ch.id)
+            print(f"[NEXUSSCAN] Obtendo páginas para capítulo: {uri}")
             response = Http.get(uri, timeout=getattr(self, 'timeout', None))
             soup = BeautifulSoup(response.content, 'html.parser')
             
@@ -106,7 +239,45 @@ class NexusScanProvider(WordPressMadara):
                 except json.JSONDecodeError as e:
                     print(f"[NEXUSSCAN] ✗ Erro ao parsear JSON do script#stream-blob-source: {e}")
             
-            # Método 3: Fallback - API (método antigo)
+            # Método 3: Busca genérica - qualquer script type="application/json" com image_url e page_number
+            json_scripts = soup.find_all('script', {'type': 'application/json'})
+            
+            print(f"[NEXUSSCAN] 🔍 Encontrados {len(json_scripts)} scripts type='application/json'")
+            
+            for idx, script in enumerate(json_scripts, 1):
+                if not script.string:
+                    print(f"[NEXUSSCAN] Script {idx}: sem conteúdo (vazio)")
+                    continue
+                
+                try:
+                    # Tenta parsear o JSON
+                    data = json.loads(script.string.strip())
+                    
+                    # Verifica se é uma lista de objetos com page_number e image_url
+                    if isinstance(data, list) and len(data) > 0:
+                        first_item = data[0]
+                        if isinstance(first_item, dict) and 'page_number' in first_item and 'image_url' in first_item:
+                            # Extrai as URLs ordenadas
+                            img_urls = [page['image_url'] for page in sorted(data, key=lambda x: x['page_number'])]
+                            
+                            if img_urls:
+                                number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
+                                script_id = script.get('id', 'sem-id')
+                                print(f"[NEXUSSCAN] ✓ {len(img_urls)} páginas obtidas via script genérico (id={script_id})")
+                                return Pages(ch.id, number, ch.name, img_urls)
+                        else:
+                            print(f"[NEXUSSCAN] Script {idx}: lista válida mas sem page_number/image_url")
+                    else:
+                        print(f"[NEXUSSCAN] Script {idx}: não é lista ou está vazia")
+                except json.JSONDecodeError as e:
+                    print(f"[NEXUSSCAN] Script {idx}: erro ao parsear JSON - {e}")
+                except (KeyError, TypeError) as e:
+                    print(f"[NEXUSSCAN] Script {idx}: erro de estrutura - {e}")
+                except Exception as e:
+                    print(f"[NEXUSSCAN] Script {idx}: erro inesperado - {e}")
+                    continue
+            
+            # Método 4: Fallback - API (método antigo)
             uri = str(ch.id)
             if uri.startswith("/manga/"):
                 uri = uri.replace("/manga/", "page-data/", 1)
@@ -120,7 +291,7 @@ class NexusScanProvider(WordPressMadara):
             
             uri_base = f"{self.api_chapters}{uri}"
             count = 1
-            list = [] 
+            img_list = [] 
             while True:
                 uri = f"{uri_base}{count}/"
                 try:
@@ -128,16 +299,16 @@ class NexusScanProvider(WordPressMadara):
                     soup = BeautifulSoup(response.content, 'html.parser')
                     temp = soup.text
                     image = dict(json.loads(temp)).get("image_url")
-                    list.append(image)
+                    img_list.append(image)
                     count += 1
                 except:
                     break
 
             number = re.findall(r'\d+\.?\d*', str(ch.number))[0] if re.findall(r'\d+\.?\d*', str(ch.number)) else ch.number
             
-            if list:
-                print(f"[NEXUSSCAN] ✓ {len(list)} páginas obtidas via API (fallback)")
-                return Pages(ch.id, number, ch.name, list)
+            if img_list:
+                print(f"[NEXUSSCAN] ✓ {len(img_list)} páginas obtidas via API (fallback)")
+                return Pages(ch.id, number, ch.name, img_list)
             else:
                 print(f"[NEXUSSCAN] ✗ Nenhuma página encontrada")
                 return Pages(ch.id, number, ch.name, [])
@@ -148,23 +319,27 @@ class NexusScanProvider(WordPressMadara):
             return Pages(ch.id, number, ch.name, [])
     
     def _get_chapters_ajax(self, manga_id):
-        # https://nexustoons.site/ajax/load-chapters/?item_slug=missoes-na-vida-real&page=1&sort=desc&q=
+        """
+        Busca capítulos via AJAX HTML (formato antigo).
+        Retorna lista de dicionários com 'href' e 'data-chapter-number'.
+        """
         title = manga_id.split('/')[-2]
         page = 1
         all_chapters = []
         seen_hrefs = set()
         
         while True:
+            # Formato antigo com item_slug
             uri = f'https://nexustoons.site/ajax/load-chapters/?item_slug={title}&page={page}&sort=desc&q='
+            
             response = Http.get(uri, timeout=getattr(self, 'timeout', None))
             
-            # Parse do HTML retornado
+            # Parse do HTML retornado (formato antigo)
             soup = BeautifulSoup(response.content, 'html.parser')
             # Busca todos os links de capítulos
             chapter_links = soup.select('a')
             
             if not chapter_links:
-                print(f"[NEXUSSCAN] Nenhum capítulo encontrado na página {page}")
                 break
             
             # Detecta repetições para parar o loop
