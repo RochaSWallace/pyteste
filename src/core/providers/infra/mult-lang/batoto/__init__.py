@@ -65,6 +65,12 @@ class BatotoProvider(Base):
             title_text = link.split('/')[-1].split('-', 1)[-1].replace('-', ' ').title()
         
         for chapter in chs:
+            href = chapter.get('href')
+            
+            # Filtra apenas links de capítulos (ignora links de usuário /u/, etc)
+            if not href or not href.startswith('/title/'):
+                continue
+            
             # Nova estrutura: texto direto "Chapter 26"
             chapter_text = chapter.get_text(strip=True)
             
@@ -73,11 +79,9 @@ class BatotoProvider(Base):
             if b_element:
                 chapter_text = b_element.get_text(strip=True)
             
-            href = chapter.get('href')
-            if href:
-                # Garante URL completa
-                chapter_url = f'{self.base}{href}' if not href.startswith('http') else href
-                list.append(Chapter(chapter_url, chapter_text, title_text))
+            # Garante URL completa
+            chapter_url = f'{self.base}{href}' if not href.startswith('http') else href
+            list.append(Chapter(chapter_url, chapter_text, title_text))
         list.reverse()
         
         # Liberar memória do BeautifulSoup
