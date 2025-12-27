@@ -108,15 +108,17 @@ class BatotoProvider(Base):
                     data = json.loads(script.string)
                     # As URLs das imagens estão no array "objs"
                     if 'objs' in data and type(data['objs']) == type([]):
-                        # Filtra apenas URLs de imagem (começam com https:// e contém /media/mbch/)
+                        # Filtra apenas URLs de imagem (começam com https://, contém /media/ e terminam com extensão de imagem)
                         for obj in data['objs']:
-                            if type(obj) == type('') and obj.startswith('https://') and '/media/mbch/' in obj:
-                                # Corrige URLs do servidor 'k' que podem estar com problemas
-                                # Substitui '//k' por '//n' em URLs que contêm '.mb'
-                                url = obj
-                                if '//k' in url and '.mb' in url:
-                                    url = url.replace('//k', '//n')
-                                list.append(url)
+                            if type(obj) == type('') and obj.startswith('https://') and '/media/' in obj:
+                                # Verifica se termina com extensão de imagem válida
+                                if obj.lower().endswith(('.webp', '.jpg', '.jpeg', '.png', '.gif')):
+                                    # Corrige URLs do servidor 'k' que podem estar com problemas
+                                    # Substitui '//k' por '//n' em URLs que contêm '.mb'
+                                    url = obj
+                                    if '//k' in url and '.mb' in url:
+                                        url = url.replace('//k', '//n')
+                                    list.append(url)
                     
                     if list:
                         break
