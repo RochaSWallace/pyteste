@@ -28,9 +28,10 @@ webdriver-manager = "^4.0.2"
 selenium-stealth = "^1.0.6"
 drissionpage = "^4.1.1.2"
 httpx = "^0.28.1"
+seleniumbase = "^4.45.9"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.2.1"
+pytest = "^9.0.0"
 pyinstaller = "^6.7.0"
 jinja2 = "^3.1.4"
 jurigged = "^0.6.0"

@@ -34,6 +34,7 @@ args = [
     '--collect-all=webdriver_manager',
     '--collect-all=selenium_stealth',
     '--collect-all=DrissionPage',
+    '--collect-all=seleniumbase',
     '--collect-all=httpx',
     f'--icon=assets/icon.ico',
     '--exclude-module=tests',
