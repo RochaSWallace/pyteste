@@ -35,7 +35,7 @@ class XXXYaoiProvider(WordPressMadara):
     def getPages(self, ch: Chapter) -> Pages:
         try:
             uri = urljoin(self.url, ch.id)
-            uri = self._add_query_params(uri, {'style': 'list'})
+            # uri = self._add_query_params(uri, {'style': 'list'})
             response = Http.get(uri, timeout=getattr(self, 'timeout', None))
             soup = BeautifulSoup(response.content, 'html.parser')
             data = soup.select(self.query_pages)

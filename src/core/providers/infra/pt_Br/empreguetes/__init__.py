@@ -219,12 +219,12 @@ class EmpreguetesProvider(Base):
                     mime = pagina.get('mime')
                     path = clean_path(pagina.get('path', 'false'))
                     src = clean_path(pagina.get('src', ''))
-                    
+                    scan_id = data.get('obra', {}).get('scan_id', 3)
                     if mime is not None:
                         # Novo formato CDN
                         full_url = f"https://cdn.verdinha.wtf/wp-content/uploads/WP-manga/data/{src}"
                     elif path == 'false' or path == '' or path is None or path.lower() == 'none':
-                        full_url = f"https://cdn.verdinha.wtf/scans/3/obras/{obra_id}/capitulos/{cap_numero}/{src}"
+                        full_url = f"https://cdn.verdinha.wtf/scans/{scan_id}/obras/{obra_id}/capitulos/{cap_numero}/{src}"
                     else:
                         if 'jpg' in path.lower() or 'png' in path.lower() or 'jpeg' in path.lower() or 'webp' in path.lower():
                             full_url = f"{self.CDN}/{path}"

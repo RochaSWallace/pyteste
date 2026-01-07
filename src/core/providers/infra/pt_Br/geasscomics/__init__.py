@@ -1,8 +1,3 @@
-"""
-Provider para GeassComics (https://geasscomics.xyz/)
-Site com React/JavaScript que requer Selenium para extração de capítulos com AWS S3 CDN
-"""
-
 import re
 import time
 import json
@@ -20,11 +15,6 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.chrome.options import Options
 from core.download.domain.dowload_entity import Chapter as DownloadedChapter
 from core.config.img_conf import get_config
 from core.__seedwork.infra.utils.sanitize_folder import sanitize_folder_name
