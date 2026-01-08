@@ -5,7 +5,7 @@ import json
 import re
 from bs4 import BeautifulSoup
 from core.__seedwork.infra.http import Http
-import logging
+import Selectolax
 from core.providers.domain.entities import Chapter, Pages, Manga
 
 class TerseuScanMProvider(BloggerCms):
