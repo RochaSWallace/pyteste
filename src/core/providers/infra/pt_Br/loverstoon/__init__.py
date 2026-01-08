@@ -4,38 +4,7 @@ from core.providers.domain.entities import Chapter, Pages, Manga
 from bs4 import BeautifulSoup
 import re
 from core.__seedwork.infra.http import Http
-from urllib.parse import urljoin, urlencode, urlparse, urlunparse, parse_qs
-from bs4 import BeautifulSoup
-import time
-import atexit
-import threading
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium_stealth import stealth
-from selenium.webdriver.chrome.service import Service
-from webdriver_manager.chrome import ChromeDriverManager
-
-# Lista global para rastrear todos os drivers criados
-_ACTIVE_DRIVERS = []
-_DRIVERS_LOCK = threading.Lock()
-
-def _register_driver(driver):
-    """Registra um driver na lista de drivers ativos"""
-    with _DRIVERS_LOCK:
-        _ACTIVE_DRIVERS.append(driver)
-
-def _cleanup_all_drivers():
-    """Fecha todos os drivers ativos ao encerrar o programa"""
-    with _DRIVERS_LOCK:
-        for driver in _ACTIVE_DRIVERS:
-            try:
-                driver.quit()
-            except:
-                pass
-        _ACTIVE_DRIVERS.clear()
-
-# Registra a função de cleanup para ser chamada ao encerrar o programa
-atexit.register(_cleanup_all_drivers)
+from urllib.parse import urljoin
 
 class LoversToonProvider(WordPressMadara):
     name = 'Lovers toon'
@@ -53,79 +22,96 @@ class LoversToonProvider(WordPressMadara):
         self.query_title_for_uri = 'h1'
         self.query_placeholder = '[id^="manga-chapters-holder"][data-id]'
 
+    def _converter_tempo_para_segundos(self, tempo_texto: str) -> int:
+        """
+        Converte tempo relativo para segundos
+        Formatos: '11 horas ago', '13 horas ago', '1 dia ago', etc.
+        """
+        tempo_texto = tempo_texto.strip().lower()
+        
+        # Remove " ago" se existir
+        tempo_texto = tempo_texto.replace(' ago', '').replace('ago', '').strip()
+        
+        # Extrai o número
+        match = re.search(r'(\d+)', tempo_texto)
+        if not match:
+            return 86400  # Padrão 24h se não conseguir parsear
+        
+        valor = int(match.group(1))
+        
+        # Identifica a unidade de tempo
+        if 'minuto' in tempo_texto or 'min' in tempo_texto:
+            return valor * 60
+        elif 'hora' in tempo_texto or 'hour' in tempo_texto:
+            return valor * 3600
+        elif 'dia' in tempo_texto or 'day' in tempo_texto:
+            return valor * 86400
+        elif 'semana' in tempo_texto or 'week' in tempo_texto or 'sem' in tempo_texto:
+            return valor * 604800
+        elif 'mês' in tempo_texto or 'mes' in tempo_texto or 'month' in tempo_texto:
+            return valor * 2592000
+        elif 'segundo' in tempo_texto or 'sec' in tempo_texto:
+            return valor
+        
+        return 86400  # Padrão 24h
+
+    def _converter_data_para_segundos(self, data_texto: str) -> int:
+        """
+        Converte data no formato DD.MM.YYYY para segundos desde o lançamento
+        Exemplo: '22.10.2025', '23.10.2025'
+        """
+        from datetime import datetime
+        
+        try:
+            # Parse formato "DD.MM.YYYY"
+            data_lancamento = datetime.strptime(data_texto.strip(), '%d.%m.%Y')
+            
+            # Calcula diferença
+            diferenca = datetime.now() - data_lancamento
+            return int(diferenca.total_seconds())
+            
+        except Exception as e:
+            print(f"[LoversToon] Erro ao converter data '{data_texto}': {e}")
+            return 86400 * 7  # Padrão 7 dias
+
     def getPages(self, ch: Chapter) -> Pages:
+        """
+        Extrai as URLs das imagens diretamente do script JavaScript no HTML.
+        As imagens estão em um array JSON dentro de um fetch para a API cache.
+        """
         uri = urljoin(self.url, ch.id)
         response = Http.get(uri, timeout=getattr(self, 'timeout', None))
-        soup_real = BeautifulSoup(response.content, 'html.parser')
-        real_link = soup_real.select_one("div.page-break > a").get('href')
-        soup = self._getRealPages(real_link)
-        data = soup.select(self.query_pages)
-        list = [] 
-        for el in data:
-            list.append(el.get("src") or el.get("data-src"))
-
-        number = re.findall(r'\d+\.?\d*', str(ch.number))[0]
-        return Pages(ch.id, number, ch.name, list)
-    
-    def _getRealPages(self, uri: str) -> BeautifulSoup:
-        chrome_options = Options()
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--log-level=3")
-        chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36")
-        chrome_options.add_argument('--ignore-certificate-errors')
-        chrome_options.add_argument('--disable-extensions')
-        chrome_options.add_argument('--disable-infobars')
-        chrome_options.add_argument('--disable-notifications')
-        chrome_options.add_argument('--disable-popup-blocking')
-        chrome_options.add_argument('--disable-background-networking')
-        chrome_options.add_argument('--disable-background-timer-throttling')
-        chrome_options.add_argument('--disable-backgrounding-occluded-windows')
-        chrome_options.add_argument('--disable-client-side-phishing-detection')
-        chrome_options.add_argument('--disable-default-apps')
-        chrome_options.add_argument('--disable-hang-monitor')
-        chrome_options.add_argument('--disable-prompt-on-repost')
-        chrome_options.add_argument('--disable-sync')
-        chrome_options.add_argument('--metrics-recording-only')
-        chrome_options.add_argument('--no-first-run')
-        chrome_options.add_argument('--safebrowsing-disable-auto-update')
-        chrome_options.add_argument('--disable-features=site-per-process,TranslateUI,BlinkGenPropertyTrees')
-        chrome_options.add_argument('--window-size=800,600')
-
-        service = Service(ChromeDriverManager().install())
-        driver = webdriver.Chrome(service=service, options=chrome_options)
+        soup = BeautifulSoup(response.content, 'html.parser')
         
-        # Registrar o driver para cleanup automático
-        _register_driver(driver)
+        list = []
         
-        urls_para_bloquear = [
-            "*googlesyndication.com*",
-            "*googletagmanager.com*",
-            "*google-analytics.com*",
-            "*disable-devtool*", # Padrão comum em scripts anti-debug
-            "*adblock-checker*", # Padrão comum em detectores de adblock
-        ]
-
-        driver.execute_cdp_cmd('Network.enable', {})
-        driver.execute_cdp_cmd('Network.setBlockedURLs', {'urls': urls_para_bloquear})
-
-        stealth(driver,
-                languages=["pt-BR", "pt"],
-                vendor="Google Inc.",
-                platform="Win32",
-                webgl_vendor="Intel Inc.",
-                renderer="Intel Iris OpenGL Engine",
-                fix_hairline=True,
-                )
-        
-        driver.get(uri)
-        time.sleep(4)  # Aguarda o carregamento da página
-        html = driver.page_source
-        soup = BeautifulSoup(html, 'html.parser')
-        
-        # Fechar o driver após uso
-        try:
-            driver.quit()
-        except:
-            pass
+        # Procura pelo script que contém o array de imagens
+        scripts = soup.find_all('script')
+        for script in scripts:
+            script_text = script.get_text()
             
-        return soup
+            # Procura pelo padrão: content: ["url1","url2",...]
+            match = re.search(r'content:\s*\[(.*?)\]', script_text, re.DOTALL)
+            if match:
+                # Extrai o conteúdo do array
+                array_content = match.group(1)
+                
+                # Extrai todas as URLs (entre aspas)
+                urls = re.findall(r'"(https?://[^"]+)"', array_content)
+                
+                if urls:
+                    list = urls
+                    print(f"✅ Encontradas {len(urls)} imagens no script JavaScript")
+                    for url in urls:
+                        print(url)
+                    break
+        
+        # Validar se encontrou páginas
+        if not list:
+            raise Exception(f"❌ Nenhuma imagem encontrada no HTML. Verifique se o padrão do script mudou.")
+
+        # Extrair número com segurança
+        matches = re.findall(r'\d+\.?\d*', str(ch.number))
+        number = matches[0] if matches else "0"
+        
+        return Pages(ch.id, number, ch.name, list)
