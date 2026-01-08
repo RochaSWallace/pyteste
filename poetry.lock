@@ -849,17 +849,6 @@ watchdog = ">=4.0.2"
 develoop = ["giving (>=0.4.3,<0.5.0)", "rich (>=10.13.0)"]
 
 [[package]]
-name = "logging"
-version = "0.4.9.6"
-description = "A logging module for Python"
-optional = false
-python-versions = "*"
-groups = ["main"]
-files = [
-    {file = "logging-0.4.9.6.tar.gz", hash = "sha256:26f6b50773f085042d301085bd1bf5d9f3735704db9f37c1ce6d8b85c38f2417"},
-]
-
-[[package]]
 name = "lxml"
 version = "6.0.1"
 description = "Powerful and Pythonic XML processing library combining libxml2/libxslt with the ElementTree API."
@@ -2395,4 +2384,4 @@ h11 = ">=0.16.0,<1"
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12,<3.13"
-content-hash = "1907d066c81cfbd1f623c1400f0484267cda7a8ca3d26cbf6533db4ec5aa9aa0"
+content-hash = "e0d149c2b0f388ef7e088d1a12053b1ba1e9843eadee5335d9a48cd5ec58099f"

@@ -28,7 +28,6 @@ webdriver-manager = "^4.0.2"
 selenium-stealth = "^1.0.6"
 drissionpage = "^4.1.1.2"
 httpx = "^0.28.1"
-logging = "^0.4.9.6"
 selectolax = "^0.4.6"
 
 [tool.poetry.group.dev.dependencies]
