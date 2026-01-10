@@ -22,7 +22,6 @@ from core.providers.infra.template.base import Base
 from core.providers.domain.entities import Chapter, Pages, Manga
 from core.config.login_data import insert_login, LoginData, get_login, delete_login
 from core.__seedwork.infra.http import Http
-import httpx
 
 class GeassComicsProvider(Base):
     name = 'Geass Comics'

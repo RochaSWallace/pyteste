@@ -19,7 +19,9 @@ class CapitoonsProvider(Base):
         self.query_chapter_links = 'li a[href*="capitulo"]'
         self.query_chapter_number = 'span.m-0'
         self.query_next_button = 'button.load-chapters'
-        self.query_images = 'div.reader-area img#imagech[src]'
+        self.query_reader_area = 'div.reader-area'
+        self.query_image_ch = 'img#imagech[src]'
+        self.query_fallback_images = 'img[src]'
 
     def getManga(self, link: str) -> Manga:
         """Obtém informações do manga"""
@@ -87,6 +89,10 @@ class CapitoonsProvider(Base):
                     # Extrai o número do capítulo
                     number_span = link.select_one(self.query_chapter_number)
                     if number_span:
+                        # Remove o span filho com classe "newchlabel" antes de pegar o texto
+                        for newlabel in number_span.select('span.newchlabel'):
+                            newlabel.decompose()
+                        
                         number_text = number_span.get_text(strip=True)
                         # Remove "Capítulo " do texto
                         number = re.sub(r'Capítulo\s*', '', number_text, flags=re.IGNORECASE).strip()
@@ -120,9 +126,9 @@ class CapitoonsProvider(Base):
         pages = []
         
         # Busca especificamente na div.reader-area
-        reader_area = soup.select_one('div.reader-area')
+        reader_area = soup.select_one(self.query_reader_area)
         if reader_area:
-            img_tags = reader_area.select('img#imagech[src]')
+            img_tags = reader_area.select(self.query_image_ch)
             for img in img_tags:
                 src = img.get('src')
                 if src and src not in pages:
@@ -130,7 +136,7 @@ class CapitoonsProvider(Base):
         
         # Se não encontrou, tenta buscar em outros containers
         if not pages:
-            img_tags = soup.select('img[src]')
+            img_tags = soup.select(self.query_fallback_images)
             for img in img_tags:
                 src = img.get('data-src') or img.get('src')
                 if src and 'wp-content/uploads' in src:
