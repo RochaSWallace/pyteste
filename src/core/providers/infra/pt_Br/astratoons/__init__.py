@@ -3,6 +3,7 @@ from typing import List
 import os
 import math
 import requests
+import re
 from PIL import Image
 from io import BytesIO
 from core.__seedwork.infra.http import Http
@@ -12,14 +13,17 @@ from core.providers.domain.entities import Chapter, Pages, Manga
 from core.download.domain.dowload_entity import Chapter as DownloadedChapter
 from core.config.img_conf import get_config
 from core.__seedwork.infra.utils.sanitize_folder import sanitize_folder_name
+
 import nodriver as uc
 import asyncio
+import concurrent.futures
 
 
 class AstraToonsProvider(WordpressEtoshoreMangaTheme):
     name = 'Astra Toons'
     lang = 'pt_Br'
-    domain = ['new.astratoons.com']
+    domain = ['new.astratoons.com', 'astratoons.com']
+
 
     def __init__(self):
         self.url = 'https://new.astratoons.com'
@@ -34,58 +38,118 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
     def getManga(self, link: str) -> Manga:
         response = Http.get(link)
         soup = BeautifulSoup(response.content, 'html.parser')
-        
+       
         title_element = soup.select_one(self.get_title)
         title = title_element.get_text().strip() if title_element else 'Título Desconhecido'
-            
+           
         return Manga(link, title)
 
     def getChapters(self, id: str) -> List[Chapter]:
         list = []
-        
+       
+        # Obter o título do mangá e o comic_id da página principal
         response = Http.get(id)
         soup = BeautifulSoup(response.content, 'html.parser')
-        
-        # Buscar título do mangá usando self.get_title
+       
+        # Buscar título do mangá
         title_element = soup.select_one(self.get_title)
         manga_title = title_element.get_text().strip() if title_element else 'Título Desconhecido'
+       
+        # Extrair comic_id do HTML
+        comic_id = None
         
-        # Buscar container de capítulos usando self.get_chapters_list
-        chapters_container = soup.select_one(self.get_chapters_list)
+        # Procurar em elementos com Alpine.js (x-data) por comicId
+        for tag in soup.find_all(attrs={'x-data': True}):
+            x_data = tag.get('x-data', '')
+            match = re.search(r'comicId:\s*(\d+)', x_data)
+            if match:
+                comic_id = match.group(1)
+                print(f"[AstraToons] 🔍 Comic ID encontrado via x-data: {comic_id}")
+                break
         
-        if not chapters_container:
-            print(f"[AstraToons] Container {self.get_chapters_list} não encontrado")
+        # Fallback: Procurar em scripts por comicId
+        if not comic_id:
+            for script in soup.find_all('script'):
+                if script.string:
+                    match = re.search(r'comicId:\s*(\d+)', script.string)
+                    if match:
+                        comic_id = match.group(1)
+                        print(f"[AstraToons] 🔍 Comic ID encontrado em script: {comic_id}")
+                        break
+        
+        if not comic_id:
+            print(f"[AstraToons] ⚠️ Não foi possível encontrar comic_id")
             return list
+       
+        print(f"[AstraToons] 🔍 Comic ID: {comic_id}")
+       
+        # Fazer requisições paginadas para a API
+        page = 1
+        has_more = True
         
-        # Buscar todos os links de capítulos usando self.chapter
-        chapter_links = chapters_container.select(self.chapter)
-        
-        print(f"[AstraToons] Encontrados {len(chapter_links)} capítulos")
-        
-        for ch_link in chapter_links:
-            chapter_url = ch_link.get('href')
-            
-            if not chapter_url:
-                continue
-            
-            # Extrair nome do capítulo usando self.get_chapter_name
-            chapter_text_elem = ch_link.select_one(self.get_chapter_name)
-            
-            if chapter_text_elem:
-                chapter_name = chapter_text_elem.get_text().strip()
-            else:
-                # Fallback: extrair do href
-                chapter_num = chapter_url.split('/capitulo/')[-1]
-                chapter_name = f"Capítulo {chapter_num}"
-            
-            chapter_obj = Chapter(
-                chapter_url if chapter_url.startswith('http') else f"{self.url}{chapter_url}",
-                chapter_name,
-                manga_title
-            )
-            list.append(chapter_obj)
-        
+        while has_more:
+            try:
+                api_url = f"{self.url}/api/comics/{comic_id}/chapters?search=&order=desc&page={page}"
+                
+                api_response = requests.get(api_url, headers={
+                    'accept': '*/*',
+                    'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+                    'referer': id,
+                    'sec-fetch-dest': 'empty',
+                    'sec-fetch-mode': 'cors',
+                    'sec-fetch-site': 'same-origin',
+                    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                })
+                
+                api_response.raise_for_status()
+                data = api_response.json()
+                
+                html_content = data.get('html', '')
+                has_more = data.get('hasMore', False)
+                
+                # Parse o HTML retornado
+                chapter_soup = BeautifulSoup(html_content, 'html.parser')
+                chapter_links = chapter_soup.select('a[href*="/capitulo/"]')
+                
+                print(f"[AstraToons] 📄 Página {page}: {len(chapter_links)} capítulos")
+                
+                for ch_link in chapter_links:
+                    chapter_url = ch_link.get('href')
+                    
+                    if not chapter_url:
+                        continue
+                    
+                    # Extrair nome do capítulo
+                    chapter_text_elem = ch_link.select_one('span.text-lg')
+                    
+                    if chapter_text_elem:
+                        chapter_name = chapter_text_elem.get_text().strip()
+                    else:
+                        # Fallback: extrair do href
+                        chapter_num = chapter_url.split('/capitulo/')[-1]
+                        chapter_name = f"Capítulo {chapter_num}"
+                    
+                    chapter_obj = Chapter(
+                        chapter_url if chapter_url.startswith('http') else f"{self.url}{chapter_url}",
+                        chapter_name,
+                        manga_title
+                    )
+                    list.append(chapter_obj)
+                
+                page += 1
+                
+                # Proteção contra loop infinito
+                if page > 100:
+                    print(f"[AstraToons] ⚠️ Limite de 100 páginas atingido")
+                    break
+                    
+            except Exception as e:
+                print(f"[AstraToons] ❌ Erro na página {page}: {e}")
+                break
+       
+        print(f"[AstraToons] ✅ Total: {len(list)} capítulos")
         return list
+
 
     def getPages(self, ch: Chapter) -> Pages:
         """
@@ -160,10 +224,9 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
 
     def download(self, pages: Pages, fn: any, headers=None, cookies=None):
         """
-        Download das URLs interceptadas de /proxy/image/
-        
-        As URLs já vêm prontas do getPages via interceptação de rede.
+        Download das URLs interceptadas de /proxy/image/ em paralelo.
         """
+        
         title = sanitize_folder_name(pages.name)
         config = get_config()
         img_path = config.save
@@ -171,39 +234,45 @@ class AstraToonsProvider(WordpressEtoshoreMangaTheme):
         os.makedirs(path, exist_ok=True)
         img_format = config.img
 
-        files = []
+        files = [None] * len(pages.pages)
         total_pages = len(pages.pages)
-        
-        for idx, img_url in enumerate(pages.pages, start=1):
+
+        def baixar_img(idx_img_url):
+            idx, img_url = idx_img_url
             try:
-                # Headers para imitar o navegador
                 download_headers = {
                     'accept': '*/*',
                     'accept-language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
-                    'referer': pages.id,  # URL do capítulo
+                    'referer': pages.id,
                     'sec-fetch-dest': 'empty',
                     'sec-fetch-mode': 'cors',
                     'sec-fetch-site': 'same-origin',
                     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
-                
+                print(f"[AstraToons] ↓ Baixando imagem {idx+1}/{total_pages}: {img_url}")
                 response = requests.get(img_url, headers=download_headers, timeout=30)
                 response.raise_for_status()
-                
-                # Abre e salva imagem
                 img = Image.open(BytesIO(response.content))
                 if img.mode in ("RGBA", "P"):
                     img = img.convert("RGB")
-                
-                file_path = os.path.join(path, f"%03d{img_format}" % idx)
+                file_path = os.path.join(path, f"%03d{img_format}" % (idx+1))
                 img.save(file_path, quality=100, dpi=(72, 72))
-                files.append(file_path)
-                
                 if fn is not None:
-                    fn(math.ceil(idx * 100) / total_pages)
-                    
+                    fn(math.ceil((idx+1) * 100) / total_pages)
+                return idx, file_path
             except Exception as e:
-                print(f"[AstraToons] ✗ Erro na imagem {idx}: {str(e)[:60]}")
-                continue
-        
+                print(f"[AstraToons] ✗ Erro na imagem {idx+1}: {str(e)[:60]}")
+                return idx, None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(baixar_img, enumerate(pages.pages)))
+        falhas = 0
+        for idx, file_path in results:
+            if file_path:
+                files[idx] = file_path
+            else:
+                falhas += 1
+        files = [f for f in files if f]
+        if falhas > 0:
+            raise Exception(f"Falha ao baixar {falhas} de {total_pages} páginas do capítulo")
         return DownloadedChapter(pages.number, files)

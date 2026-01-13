@@ -23,6 +23,7 @@ from core.providers.domain.entities import Chapter, Pages, Manga
 from core.config.login_data import insert_login, LoginData, get_login, delete_login
 from core.__seedwork.infra.http import Http
 
+
 class GeassComicsProvider(Base):
     name = 'Geass Comics'
     lang = 'pt_Br'
@@ -110,6 +111,7 @@ class GeassComicsProvider(Base):
             print(f"[GeassComics] ⚠️  Erro no login automático: {e}")
             print("[GeassComics] 💡 O provider funcionará para conteúdo público")
             return False
+
     def _derive_key(self, password: str) -> bytes:
         """Deriva a chave AES usando PBKDF2"""
         kdf = PBKDF2HMAC(
