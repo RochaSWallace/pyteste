@@ -9,10 +9,10 @@ from core.providers.domain.entities import Chapter, Pages, Manga
 class BatotoProvider(Base):
     name = 'Batoto'
     lang = 'mult'
-    domain = ['wto.to', 'bato.to', 'battwo.com', 'batotoo.com', 'xbato.net', 'xbato.com', 'bato.si']
+    domain = ['wto.to', 'bato.to', 'battwo.com', 'batotoo.com', 'xbato.net', 'xbato.com', 'bato.si', 'xcat.tv']
 
     def __init__(self) -> None:
-        self.base = 'https://bato.si'
+        self.base = 'https://xcat.tv/'
         self.headers = {'referer': f'{self.base}'}
 
     def getManga(self, link: str) -> Manga:

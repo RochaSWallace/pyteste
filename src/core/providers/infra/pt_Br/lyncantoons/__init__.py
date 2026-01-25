@@ -1,11 +1,9 @@
 from core.providers.infra.template.wordpress_madara import WordPressMadara
 import re
 import json
-import requests
 from typing import List
 from bs4 import BeautifulSoup
 from core.__seedwork.infra.http import Http
-from core.__seedwork.infra.http.contract.http import Response
 from core.providers.domain.entities import Chapter, Pages, Manga
 from urllib.parse import urljoin, urlencode, urlparse, urlunparse, parse_qs
 import os
@@ -25,12 +23,56 @@ class LycanToonsProvider(WordPressMadara):
         self.query_chapters_title_bloat = None
         self.query_pages = 'div.page-break.no-gaps'
         self.query_title_for_uri = 'h1.item-title'
-        self.query_placeholder = '[id^="manga-chapters-holder"][data-id]'
-        # self.api_chapters = 'https://nexustoons.site/api/'
+        self.query_placeholder = '[id^="manga-chapters-holder"][data-id]' 
     
     def getManga(self, link: str) -> Manga:
+        print(f"\n{'='*60}")
+        print(f"[LycanToons getManga] Iniciando para: {link}")
+        print(f"{'='*60}")
+        
         response = Http.get(link, timeout=getattr(self, 'timeout', None))
+        
         content = response.content if isinstance(response.content, str) else response.content.decode('utf-8', errors='ignore')
+        
+        # Salva o HTML completo em arquivo para análise
+        try:
+            log_dir = "logs_lycantoons"
+            os.makedirs(log_dir, exist_ok=True)
+            log_file = os.path.join(log_dir, "getManga_response.html")
+            with open(log_file, 'w', encoding='utf-8') as f:
+                f.write(content)
+        except Exception as e:
+            print(f"[LycanToons getManga] ✗ Erro ao salvar log: {e}")
+        
+        if 'self.__next_f' in content:
+            # Mostra contexto onde aparece
+            idx = content.find('self.__next_f')
+        else:
+            print(f"[LycanToons getManga] ✗ 'self.__next_f' NÃO encontrado")
+        
+            
+        if 'Book' in content:
+            # Mostra contexto
+            idx = content.find('Book')
+            sample = content[max(0, idx-200):idx+300]
+            print(sample)
+            
+            # Extrai e salva a região completa do JSON
+            try:
+                # Procura o bloco JSON completo que contém Book
+                start = max(0, idx - 1000)
+                end = min(len(content), idx + 2000)
+                json_region = content[start:end]
+                
+                log_file = os.path.join("logs_lycantoons", "book_json_region.txt")
+                with open(log_file, 'w', encoding='utf-8') as f:
+                    f.write("=== REGIÃO COMPLETA DO BOOK ===\n")
+                    f.write(json_region)
+            except Exception as e:
+                print(f"[LycanToons getManga] ✗ Erro ao salvar região: {e}")
+                
+        else:
+            print(f"[LycanToons getManga] ✗ 'Book' NÃO encontrado")
         
         title = None
         
@@ -252,6 +294,8 @@ class LycanToonsProvider(WordPressMadara):
             ch_number = re.findall(r'\d+\.?\d*', str(ch.number))
             number = ch_number[0] if ch_number else ch.number
             
+            print(f"\n[LycanToons getPages] Buscando imagens do capítulo: {ch.id}")
+            
             # Headers seguindo o padrão do fetch
             headers = {
                 'accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
@@ -270,43 +314,86 @@ class LycanToonsProvider(WordPressMadara):
             }
             
             # Faz requisição HTTP com headers customizados
-            response = requests.get(ch.id, headers=headers, timeout=30)
-            content = response.text
+            response = Http.get(ch.id, headers=headers, timeout=30)
+            content = response.text()
+            
+            # Salva resposta para debug
+            try:
+                log_dir = "logs_lycantoons"
+                os.makedirs(log_dir, exist_ok=True)
+                log_file = os.path.join(log_dir, f"getPages_chapter_{number}.html")
+                with open(log_file, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                print(f"[LycanToons getPages] ✓ HTML salvo em: {log_file}")
+            except Exception as e:
+                print(f"[LycanToons getPages] ✗ Erro ao salvar log: {e}")
             
             img_urls = []
             
-            # Busca diretamente pelo array imageUrls no HTML
-            # O padrão está em: self.__next_f.push([1,"a:[[...],[...{\"imageUrls\":[...]}]]\n"])
-            # Tenta vários padrões para encontrar as URLs
+            # Debug: verifica se o padrão existe
+            if 'self.__next_f.push' in content:
+                print(f"[LycanToons getPages] ✓ Encontrado 'self.__next_f.push' no HTML")
+            else:
+                print(f"[LycanToons getPages] ✗ 'self.__next_f.push' NÃO encontrado")
             
-            # Padrão 1: Busca imageUrls com aspas escapadas ou não
+            if 'imageUrls' in content:
+                print(f"[LycanToons getPages] ✓ Encontrado 'imageUrls' no HTML")
+            else:
+                print(f"[LycanToons getPages] ✗ 'imageUrls' NÃO encontrado")
+            
+            # Busca diretamente pelo array imageUrls no HTML
+            # O padrão está em: self.__next_f.push([1,"7:...{\\"imageUrls\\":[\\"url1\\",\\"url2\\"]..."])
+            # Busca diretamente todas as URLs do tipo https://cdn.lycantoons.com/file/lycantoons/...
+            
+            # Busca padrão com escapes: \\"imageUrls\\" ou sem: "imageUrls"
+            # Tenta ambos os padrões
             patterns = [
-                r'"imageUrls":\s*\[([^\]]+)\]',  # Padrão genérico
-                r'\\"imageUrls\\":\s*\[([^\]]+)\]',  # Com escapes
+                r'\\\\"imageUrls\\\\":\s*\[(.*?)\]',  # Com barras duplas escapadas
+                r'\\"imageUrls\\":\s*\[(.*?)\]',      # Com barras simples
+                r'"imageUrls":\s*\[(.*?)\]',          # Sem escapes
             ]
             
-            urls_str = None
+            urls_section = None
+            matched_pattern = None
             for pattern in patterns:
-                urls_match = re.search(pattern, content)
+                urls_match = re.search(pattern, content, re.DOTALL)
                 if urls_match:
-                    urls_str = urls_match.group(1)
+                    urls_section = urls_match.group(1)
+                    matched_pattern = pattern
                     break
             
-            if urls_str:
-                # Extrai todas as URLs do conteúdo encontrado
-                # Tenta com diferentes padrões de escape
+            if urls_section:
+                print(f"[LycanToons getPages] ✓ Seção imageUrls encontrada com padrão: {matched_pattern[:50]}")
+                print(f"[LycanToons getPages] Primeiros 200 chars: {urls_section[:200]}")
+                
+                # Extrai todas as URLs - tenta diferentes padrões de escape
                 url_patterns = [
-                    r'"(https://cdn\.lycantoons\.com/file/[^"]+)"',  # URLs normais
-                    r'\\"(https://cdn\.lycantoons\.com/file/[^\\]+)\\"',  # URLs com escape
-                    r'(https://cdn\.lycantoons\.com/file/lycantoons/[^\s,"\]]+)',  # URLs sem aspas
+                    r'\\\\"(https://cdn\.lycantoons\.com/file/lycantoons/[^\\]+)\\\\"',  # Com barras duplas
+                    r'\\"(https://cdn\.lycantoons\.com/file/lycantoons/[^\\]+)\\"',      # Com barras simples
+                    r'"(https://cdn\.lycantoons\.com/file/lycantoons/[^"]+)"',           # Sem escapes
                 ]
                 
                 for url_pattern in url_patterns:
-                    img_urls = re.findall(url_pattern, urls_str)
+                    img_urls = re.findall(url_pattern, urls_section)
                     if img_urls:
-                        # Remove barras invertidas no final das URLs (artefatos de escape)
-                        img_urls = [url.rstrip('\\') for url in img_urls]
+                        print(f"[LycanToons getPages] ✓ Encontradas {len(img_urls)} imagens com padrão: {url_pattern[:60]}")
+                        print(f"[LycanToons getPages] Primeira: {img_urls[0]}")
+                        print(f"[LycanToons getPages] Última: {img_urls[-1]}")
                         break
+                
+                if not img_urls:
+                    print(f"[LycanToons getPages] ✗ Nenhuma URL extraída")
+                    print(f"[LycanToons getPages] Conteúdo da seção: {urls_section[:300]}")
+            else:
+                print(f"[LycanToons getPages] ✗ Pattern 'imageUrls' não encontrado no HTML")
+                # Debug: mostra um trecho do HTML ao redor de "imageUrls"
+                idx = content.find('imageUrls')
+                if idx != -1:
+                    print(f"[LycanToons getPages] Debug - Contexto ao redor de 'imageUrls':")
+                    print(f"{content[max(0, idx-100):idx+200]}")
+            
+            if not img_urls:
+                print(f"[LycanToons getPages] ✗ Nenhuma imagem encontrada")
             
             return Pages(ch.id, number, ch.name, img_urls if img_urls else [])
                 
@@ -334,6 +421,7 @@ class LycanToonsProvider(WordPressMadara):
             chapter_links = soup.select('a')
             
             if not chapter_links:
+                print(f"[NEXUSSCAN] Nenhum capítulo encontrado na página {page}")
                 break
             
             # Detecta repetições para parar o loop
@@ -367,12 +455,14 @@ class LycanToonsProvider(WordPressMadara):
             
             # Se mais de 80% são repetições ou nenhum novo, para o loop
             if len(chapter_links) > 0 and (repeated_count >= len(chapter_links) * 0.8 or new_chapters_count == 0):
+                print("[NEXUSSCAN] Parando: muitas repetições detectadas")
                 break
             
             page += 1
             
             # Proteção contra loop infinito
             if page > 100:
+                print("[NEXUSSCAN] Limite de páginas atingido (100)")
                 break
         
         if all_chapters:
