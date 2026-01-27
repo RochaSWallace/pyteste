@@ -154,7 +154,7 @@ class HuntersScanProvider(WordPressMadara):
         except Exception as e:
             print(f"[HuntersScan] Falha ao extrair imagens: {e}")
         
-        raise Exception("Não foi possível extrair as URLs das imagens do capítulo")
+        raise Exception(f"Não foi possível extrair as URLs das imagens do capítulo: {ch.id}")
     
     def _get_images_http(self, url_capitulo):
         """
@@ -195,7 +195,7 @@ class HuntersScanProvider(WordPressMadara):
                 
                 url = src or data_src or data_lazy_src
                 
-                if url and url.startswith('http'):
+                if url and (url.startswith('http://') or url.startswith('https://')):
                     url = url.strip()
                     urls_imagens.append(url)
             
