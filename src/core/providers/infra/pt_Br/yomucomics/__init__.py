@@ -1,8 +1,9 @@
 import re
-import requests
 from typing import List
+from time import sleep
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse, unquote
+from DrissionPage import ChromiumPage, ChromiumOptions
 from core.__seedwork.infra.http import Http
 from core.providers.domain.entities import Chapter, Pages, Manga
 from core.providers.infra.template.manga_reader_cms import MangaReaderCms
@@ -40,52 +41,63 @@ class YomuComicsProvider(MangaReaderCms):
         return False
     
     def login(self):
-        """Login via API - execução simplificada para evitar conflitos de threading"""
-        # Verifica se já tem login salvo (não faz requisições aqui)
+        """Login manual usando DrissionPage para capturar cookies do navegador"""
+        # Verifica se já tem login salvo
         login_info = get_login(self.domain)
         if login_info:
             print("[YomuComics] ✅ Login encontrado em cache")
             return True
         
-        print("[YomuComics] ⚠️  Nenhum login encontrado")
-        print("[YomuComics] 📝 Faça login manualmente no navegador em: https://yomu.com.br")
+        print("[YomuComics] 🔐 Iniciando navegador para login...")
+        print("[YomuComics] 📝 Você tem 30 segundos para fazer login manualmente")
         
-        # Tenta fazer login via API de forma simples
         try:
-            session = requests.Session()
+            # Configurar opções do navegador
+            co = ChromiumOptions()
+            co.headless(False)
             
-            login_data = {
-                'email': 'opai@gmail.com',
-                'password': 'Opaiec@lvo1'
-            }
+            # Criar página
+            page = ChromiumPage(addr_or_opts=co)
+            page.get(self.login_page)
             
-            response = session.post(
-                self.login_page,
-                data=login_data,
-                headers={
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-                },
-                timeout=15
-            )
+            print("[YomuComics] ⏳ Aguardando 30 segundos...")
+            sleep(30)
             
-            # Se status OK, salva cookies
-            if response.status_code == 200:
-                cookies_dict = {}
-                for cookie in session.cookies:
+            print("[YomuComics] ✅ Capturando cookies...")
+            
+            # Captura todos os cookies
+            cookies = page.cookies()
+            cookies_dict = {}
+            
+            # DrissionPage retorna um objeto CookiesList
+            for cookie in cookies:
+                if hasattr(cookie, 'name') and hasattr(cookie, 'value'):
                     cookies_dict[cookie.name] = cookie.value
+                elif isinstance(cookie, dict):
+                    cookies_dict[cookie.get('name')] = cookie.get('value')
+            
+            print(f"[YomuComics] 🍪 {len(cookies_dict)} cookies capturados")
+            
+            # Fecha o navegador
+            page.quit()
+            
+            # Salva os cookies
+            if cookies_dict:
+                insert_login(LoginData(self.domain, {}, cookies_dict))
+                print("[YomuComics] ✅ Login realizado e cookies salvos com sucesso!")
+                return True
+            else:
+                print("[YomuComics] ⚠️  Nenhum cookie capturado")
+                return False
                 
-                if cookies_dict:
-                    insert_login(LoginData(self.domain, {}, cookies_dict))
-                    print(f"[YomuComics] ✅ {len(cookies_dict)} cookies salvos")
-                    return True
-            
-            print(f"[YomuComics] ⚠️  Status: {response.status_code}")
+        except ImportError:
+            print("[YomuComics] ❌ DrissionPage não está instalado")
+            print("[YomuComics] Execute: pip install DrissionPage")
             return False
-            
         except Exception as e:
-            print(f"[YomuComics] ⚠️  Erro no login automático: {e}")
-            print("[YomuComics] 💡 O provider funcionará para conteúdo público")
+            print(f"[YomuComics] ❌ Erro durante login: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
     def getManga(self, link: str) -> Manga:
