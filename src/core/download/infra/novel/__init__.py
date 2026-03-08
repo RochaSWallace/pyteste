@@ -6,7 +6,6 @@ from urllib.parse import urljoin, urlparse
 from typing import Optional
 from core.config.img_conf import get_config
 from core.__seedwork.infra.http import Http
-from core.__seedwork.infra.http.http_image import HttpImageService
 from core.providers.domain.page_entity import Pages
 from core.download.domain.dowload_entity import Chapter
 from core.download.domain.dowload_repository import DownloadRepository
@@ -372,16 +371,11 @@ class NovelDownloadRepository(DownloadRepository):
             str: URL do CDN ou Data URI base64
         """
         try:
-            # Baixa a imagem
+
             try:
-                response = HttpImageService.get(url, headers=headers, cookies=cookies, timeout=timeout)
-            except Exception as e:
-                print(f"[Download] Falha com HttpImage para {url}: {e}")
-                # Fallback para Http (cloudscraper) se HttpImage falhar
-                try:
-                    response = Http.get(url, headers=headers, cookies=cookies, timeout=timeout)
-                except Exception as e2:
-                    print(f"[Download] Falha com Http para {url}: {e2}")
+                response = Http.get(url, headers=headers, cookies=cookies, timeout=timeout)
+            except Exception as e2:
+                print(f"[Download] Falha com Http para {url}: {e2}")
 
             # response = Http.get(url, headers=headers, cookies=cookies, timeout=timeout)
             

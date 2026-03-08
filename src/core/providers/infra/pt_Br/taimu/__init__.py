@@ -22,12 +22,12 @@ class TaimuProvider(WordpressEtoshoreMangaTheme):
         self.api = 'https://api.taimumangas.com/'
         
         self.get_title = 'h1'
-        self.get_chapters_list = 'div.grid.gap-2'
-        self.chapter = 'a[href^="/reader/"]'
-        self.get_chapter_number = 'p.font-semibold'
+        self.get_chapters_list = 'div.grid'
+        self.chapter = 'a'
+        self.get_chapter_number = 'p'
         self.get_div_page = 'div#readerarea'
         self.get_pages = 'img'
-    
+
     def getManga(self, link: str) -> Manga:
         response = Http.get(link)
         soup = BeautifulSoup(response.content, 'html.parser')
@@ -38,13 +38,13 @@ class TaimuProvider(WordpressEtoshoreMangaTheme):
         all_chapters = []
         page = 1
         title = None
-        
+
         while True:
             # Monta a URL com o parâmetro de página
             if '?' in id:
-                url = f"{id}&page={page}"
+                url = f"{id}&page={page}&order=desc"
             else:
-                url = f"{id}?page={page}"
+                url = f"{id}?page={page}&order=desc"
             
             response = Http.get(url)
             soup = BeautifulSoup(response.content, 'html.parser')

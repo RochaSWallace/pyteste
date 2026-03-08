@@ -1,4 +1,5 @@
 from core.providers.infra.template.wordpress_madara import WordPressMadara
+from core.download.application.use_cases import DownloadUseCase
 import re
 from bs4 import BeautifulSoup
 from core.__seedwork.infra.http import Http
@@ -40,3 +41,17 @@ class HiperCoolProvider(WordPressMadara):
         number = re.findall(r'\d+\.?\d*', str(ch.number))[0]
         return Pages(ch.id, number, ch.name, list)
     
+    def download(self, pages: Pages, fn: any, headers=None, cookies=None):
+        # Headers específicos necessários para o download de imagens
+        custom_headers = {
+            "sec-ch-ua": '"Not:A-Brand";v="99", "Brave";v="145", "Chromium";v="145"',
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-platform": '"Android"',
+            "Referer": "https://hiper.cool/"
+        }
+        
+        # Mescla os headers customizados com os headers fornecidos (se houver)
+        if headers:
+            custom_headers.update(headers)
+        
+        return DownloadUseCase().execute(pages=pages, fn=fn, headers=custom_headers, cookies=cookies)
