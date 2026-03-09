@@ -50,69 +50,74 @@ class CapitoonsProvider(Base):
         post_id = chapter_list['data-post-id']
         
         # Faz requisições AJAX para obter todos os capítulos
-        # Começa com ordem ASC para pegar os últimos capítulos
         chapters = []
-        
-        # Primeiro, busca com ordem ASC (capítulos mais recentes)
-        for order in ['ASC', 'DESC']:
-            paged = 1
-            while True:
-                # Monta o body application/x-www-form-urlencoded
-                body = f'action=load_chapters&post_id={post_id}&count=1000&paged={paged}&order={order}'
-            
-                headers = {
-                    'content-type': 'application/x-www-form-urlencoded',
-                    'referer': id
-                }
-                
-                ajax_url = urljoin(self.url, '/wp-admin/admin-ajax.php')
-                ajax_response = Http.post(ajax_url, data=body, headers=headers)
-                
-                # Parse da resposta HTML
-                ajax_soup = BeautifulSoup(ajax_response.content, 'html.parser')
-                
-                # Busca os links dos capítulos
-                chapter_links = ajax_soup.select(self.query_chapter_links)
-                
-                if not chapter_links:
-                    break
-                
-                for link in chapter_links:
-                    href = link.get('href')
-                    if not href:
-                        continue
-                    
-                    # Evita duplicados
-                    if any(ch.id == href for ch in chapters):
-                        continue
-                    
-                    # Extrai o número do capítulo
-                    number_span = link.select_one(self.query_chapter_number)
-                    if number_span:
-                        # Remove o span filho com classe "newchlabel" antes de pegar o texto
-                        for newlabel in number_span.select('span.newchlabel'):
-                            newlabel.decompose()
-                        
-                        number_text = number_span.get_text(strip=True)
-                        # Remove "Capítulo " do texto
-                        number = re.sub(r'Capítulo\s*', '', number_text, flags=re.IGNORECASE).strip()
-                    else:
-                        # Tenta extrair do href
-                        match = re.search(r'capitulo[- ](\d+(?:\.\d+)?)', href, re.IGNORECASE)
-                        number = match.group(1) if match else str(len(chapters) + 1)
-                    
-                    chapters.append(Chapter(id=href, number=number, name=title))
-                
-                # Verifica se há botão "Próximo" para continuar
-                next_button = ajax_soup.select_one('button.load-chapters')
-                if next_button and 'data-paged' in next_button.attrs:
-                    next_paged = next_button['data-paged']
-                    if next_paged and int(next_paged) > paged:
-                        paged = int(next_paged)
-                    else:
-                        break
+        seen_ids = set()
+        paged = 1
+        order = 'DESC'
+
+        headers = {
+            'referer': id
+        }
+
+        ajax_url = urljoin(self.url, '/wp-admin/admin-ajax.php')
+
+        while True:
+            # Reproduz a chamada do navegador (multipart/form-data)
+            payload = {
+                'action': (None, 'load_chapters'),
+                'post_id': (None, str(post_id)),
+                'count': (None, '1000'),
+                'paged': (None, str(paged)),
+                'order': (None, order),
+            }
+
+            ajax_response = Http.post(ajax_url, files=payload, headers=headers)
+
+            # Parse da resposta HTML
+            ajax_soup = BeautifulSoup(ajax_response.content, 'html.parser')
+
+            # Busca os links dos capítulos
+            chapter_links = ajax_soup.select(self.query_chapter_links)
+
+            if not chapter_links:
+                break
+
+            for link in chapter_links:
+                href = link.get('href')
+                if not href or href in seen_ids:
+                    continue
+
+                # Extrai o número do capítulo
+                number_span = link.select_one(self.query_chapter_number)
+                if number_span:
+                    # Remove o span filho com classe "newchlabel" antes de pegar o texto
+                    for newlabel in number_span.select('span.newchlabel'):
+                        newlabel.decompose()
+
+                    number_text = number_span.get_text(strip=True)
+                    # Remove "Capítulo " do texto
+                    number = re.sub(r'Capítulo\s*', '', number_text, flags=re.IGNORECASE).strip()
                 else:
-                    break
+                    # Tenta extrair do href
+                    match = re.search(r'capitulo[- ](\d+(?:\.\d+)?)', href, re.IGNORECASE)
+                    number = match.group(1) if match else str(len(chapters) + 1)
+
+                chapters.append(Chapter(id=href, number=number, name=title))
+                seen_ids.add(href)
+
+            # Encontra o próximo paged válido (maior que o atual)
+            next_pages = []
+            for button in ajax_soup.select(self.query_next_button):
+                value = button.get('data-paged')
+                if value and value.isdigit():
+                    page_value = int(value)
+                    if page_value > paged:
+                        next_pages.append(page_value)
+
+            if not next_pages:
+                break
+
+            paged = min(next_pages)
         
         # Ordena por número do capítulo
         chapters.sort(key=lambda ch: float(re.findall(r'\d+\.?\d*', str(ch.number))[0]) if re.findall(r'\d+\.?\d*', str(ch.number)) else 0)
