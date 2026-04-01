@@ -1,83 +1,40 @@
 import os
 import cv2
-import base64
-import time
+import json
 import re
-import threading
-import atexit
+import time
+import requests
 from pathlib import Path
 from bs4 import BeautifulSoup
 from typing import List
 from urllib.parse import urljoin
-from core.__seedwork.infra.http import Http
 from core.providers.domain.entities import Chapter, Pages, Manga
 from core.download.application.use_cases import DownloadUseCase
+from core.config.login_data import LoginData, get_login, insert_login
 from core.providers.infra.template.wordpress_madara import WordPressMadara
-from DrissionPage import ChromiumPage, ChromiumOptions
-
-# Variável global para controlar se login já foi verificado
-_MANHASTRO_LOGIN_CHECKED = False
-
-# Sistema de navegador compartilhado com múltiplas abas
-_SHARED_BROWSER = None
-_BROWSER_LOCK = threading.Lock()
-
-def _get_shared_browser():
-    """Pega o navegador compartilhado ou cria um novo"""
-    global _SHARED_BROWSER
-    with _BROWSER_LOCK:
-        if _SHARED_BROWSER is None:
-            options = ChromiumOptions()
-            options.headless(True)
-            options.set_argument('--no-sandbox')
-            options.set_argument('--disable-dev-shm-usage')
-            options.set_argument('--disable-gpu')
-            options.set_argument('--disable-extensions')
-            options.set_argument('--disable-web-security')
-            _SHARED_BROWSER = ChromiumPage(options)
-            print("Navegador compartilhado criado")
-        return _SHARED_BROWSER
-
-def _cleanup_shared_browser():
-    """Fecha o navegador compartilhado"""
-    global _SHARED_BROWSER
-    with _BROWSER_LOCK:
-        if _SHARED_BROWSER:
-            try:
-                _SHARED_BROWSER.quit()
-                print("Navegador compartilhado fechado")
-            except:
-                pass
-            _SHARED_BROWSER = None
-
-# Registrar cleanup no exit
-atexit.register(_cleanup_shared_browser)
-
-def _check_manhastro_login():
-    """Verifica login do Manhastro apenas uma vez por execução"""
-    global _MANHASTRO_LOGIN_CHECKED
-    if _MANHASTRO_LOGIN_CHECKED:
-        return
-    
-    page = ChromiumPage()
-    try:
-        page.get('https://manhastro.net/')
-        time.sleep(30)
-    finally:
-        page.quit()
-        _MANHASTRO_LOGIN_CHECKED = True
 
 class ManhastroProvider(WordPressMadara):
     name = 'Manhastro'
     lang = 'pt-Br'
     domain = ['manhastro.net']
+    has_login = True
 
     def __init__(self):
         self.url = 'https://manhastro.net/'
+        self.api_base = 'https://api2.manhastro.net'
         self.path = ''
-        
-        # Verifica login antes de começar
-        _check_manhastro_login()
+        self.domain_name = 'manhastro.net'
+        self.login_email = 'wsr1@aluno.ifal.edu.br'
+        self.login_password = 'majorw12'
+        # Token de fallback; pode expirar e ser sobrescrito via variável de ambiente.
+        self.turnstile_token = (
+            '0.c7IhzkmcXeiYJhG8Bj4CDc3SNODyI1YcSgH7c-smKIPDkvkqFjTtjHBwFd8uG4vk-ETkvsxDyEDg3vvJC3eB4myHD9svBpFhtKclOGPMSSWulsICTzRmHjg9nFZrkdxO5tBzkPbuGJ4xSFk-nix7QXRNcwCjZj3sQ4VtCadZyAwCB2aPQA3Gt-Qt2GEKU5XZOwxwqkG4m2kdWFJ07mxBrQ2xEoipPn9vT9XZXfJIeL3FByPvIR2u_gU9tlnUBYSsjwwwUL441Qa7U10GXR64VRcwRkshy36B8A_vgjaKokViTfHqUpyTNllGZzjPz-nNGz_Q7dpzy8y7Pg1zJkzGuTMSmRuyG4cDKnwvig_mOPB9G1VFnz36n6LwF70lqwQKS-G7eY8y_487tTL_2geQIhnIDiR_C0XSUKrym3mbUjQjYlNvXF0Q9jHcCKaXVMHwWYXfeyVdBsr4UfU0JXDYiuJYVXUsOOjcAIvpyOC5lEQmLhKLkwTW0qhQi-rVyb_0smXH2OgjRHmCXMRT69uxZNXGbnsXEFuapjdSTq637GwXInvGy8b7Yr6lC0gTFVpqGblxFfHjxZtE9PKp45vIEYOr2-niJdhAGRUAU8lzBNUMEUT7Z6rWX-I-uvDlbxUE9Z7UISEI-RGMp91oFwkFJTen7XObV7tMOVpBpGKa3IK7Zajm55e4lxySGLKulJHuryZlJD_tbnRI7W1p9vZ9QsfLb3ZWBAMOV2Erje8E32r3TkWlTfc7hpqdV96HGE3hTXhRCFM68PHtRLzJb9Sz1uV1Vof2PaDf-gsOKDftsWNuGAAYBG4EYwWVbEF7UwxDbdfoS2RSN6uy1x1GaR18vFUAG1qsO6iijRXW_FsRb6fFJ2xC9hqOp1WykW-bCdWsJkEyIVzY9N2lhSx4LFETJK8o88UstKh8ldZam5WaN7E.ho_ibpZuQ81xYIg9GUbE6A.c269a6ea8b36f53521377feda2684c947e1f40f60cdba6201427ec0bdb36e1a2'
+        )
+        self.access_token = None
+        self.timeout = 20
+        self.catalog_cache_ttl = 600
+        self._catalog_cache_data = None
+        self._catalog_cache_at = 0.0
         
         self.query_mangas = 'div.post-title h3 a, div.post-title h5 a'
         self.query_chapters = 'div.relative > a'
@@ -85,131 +42,305 @@ class ManhastroProvider(WordPressMadara):
         self.query_pages = 'img[alt*="Página"]'
         self.query_title_for_uri = 'div.space-y-4 > h1'
         self.query_placeholder = '[id^="manga-chapters-holder"][data-id]'
+        self._load_token()
+
+    def _load_token(self):
+        login_info = get_login(self.domain_name)
+        if login_info and login_info.headers.get('authorization'):
+            self.access_token = login_info.headers.get('authorization').replace('Bearer ', '')
+
+    def _save_token(self, token: str):
+        self.access_token = token
+        insert_login(LoginData(
+            domain=self.domain_name,
+            headers={'authorization': f'Bearer {token}'},
+            cookies={}
+        ))
+
+    def _extract_manga_id(self, value: str) -> str | None:
+        if not value:
+            return None
+        digits = re.findall(r'\d+', value)
+        return digits[-1] if digits else None
+
+    def _extract_title(self, soup: BeautifulSoup) -> str:
+        data = soup.select(self.query_title_for_uri)
+        if data:
+            element = data.pop()
+            return element.get('content', '').strip() or element.text.strip()
+        og_title = soup.select_one('meta[property="og:title"]')
+        if og_title:
+            return og_title.get('content', '').strip()
+        h1 = soup.select_one('h1')
+        if h1:
+            return h1.text.strip()
+        return 'Título Desconhecido'
+
+    def _auth_headers(self) -> dict:
+        headers = {'accept': 'application/json'}
+        if self.access_token:
+            headers['authorization'] = f'Bearer {self.access_token}'
+        return headers
+
+    def _parse_api_json_text(self, text: str):
+        raw = (text or '').strip()
+        if raw.startswith('_'):
+            raw = raw[1:]
+        return json.loads(raw) if raw else {}
+
+    def _get_catalog_data(self, force_refresh=False):
+        now = time.time()
+        cache_is_valid = (
+            self._catalog_cache_data is not None
+            and (now - self._catalog_cache_at) < self.catalog_cache_ttl
+        )
+        if not force_refresh and cache_is_valid:
+            return self._catalog_cache_data
+
+        response = requests.get(
+            f'{self.api_base}/dados',
+            headers=self._auth_headers(),
+            timeout=self.timeout
+        )
+        payload = self._parse_api_json_text(response.text)
+        data = payload.get('data', {}) if isinstance(payload, dict) else {}
+
+        self._catalog_cache_data = data
+        self._catalog_cache_at = now
+        return data
+
+    def _find_manga_in_catalog(self, node, manga_id: str):
+        manga_id = str(manga_id)
+
+        if isinstance(node, dict):
+            # Alguns catálogos usam a key como id da obra.
+            direct = node.get(manga_id)
+            if isinstance(direct, dict):
+                return direct
+
+            if str(node.get('manga_id', '')) == manga_id:
+                return node
+
+            for value in node.values():
+                found = self._find_manga_in_catalog(value, manga_id)
+                if found is not None:
+                    return found
+
+        if isinstance(node, list):
+            for item in node:
+                found = self._find_manga_in_catalog(item, manga_id)
+                if found is not None:
+                    return found
+
+        return None
+
+    def _get_manga_from_api_index(self, manga_id: str):
+        data = self._get_catalog_data()
+        found = self._find_manga_in_catalog(data, manga_id)
+        if found is not None:
+            return found
+
+        # Se não achou, força refresh uma vez e tenta novamente.
+        data = self._get_catalog_data(force_refresh=True)
+        found = self._find_manga_in_catalog(data, manga_id)
+        if found is not None:
+            return found
+
+        print(f"[Manhastro] manga_id {manga_id} não encontrado em /dados")
+        return None
+
+    def _get_manga_title_by_id(self, manga_id: str) -> str | None:
+        try:
+            manga = self._get_manga_from_api_index(manga_id)
+            if not manga:
+                return None
+            return (
+                manga.get('titulo_brasil')
+                or manga.get('titulo')
+                or None
+            )
+        except Exception:
+            return None
+
+    def login(self, force=False):
+        if not force and self.access_token:
+            return True
+
+        turnstile_token = os.getenv('MANHASTRO_TURNSTILE_TOKEN', self.turnstile_token)
+        files = {
+            'email': (None, self.login_email),
+            'password': (None, self.login_password),
+            'extended_session': (None, 'true'),
+            'turnstile_token': (None, turnstile_token)
+        }
+
+        try:
+            response = requests.post(
+                f'{self.api_base}/user/login',
+                headers={'accept': 'application/json'},
+                files=files,
+                timeout=self.timeout
+            )
+            payload = response.json()
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except json.JSONDecodeError:
+                    payload = {'data': payload}
+
+            token = None
+            if isinstance(payload, dict):
+                data = payload.get('data')
+                if isinstance(data, dict):
+                    token = data.get('token')
+                elif isinstance(data, str):
+                    # Alguns retornos trazem data como string JSON ou token puro.
+                    try:
+                        parsed_data = json.loads(data)
+                        if isinstance(parsed_data, dict):
+                            token = parsed_data.get('token')
+                        elif isinstance(parsed_data, str):
+                            token = parsed_data
+                    except json.JSONDecodeError:
+                        token = data
+                if not token and isinstance(payload.get('token'), str):
+                    token = payload.get('token')
+
+            if response.status_code in [200, 201] and token:
+                self._save_token(token)
+                return True
+            print(f"[Manhastro] Falha no login: {response.status_code} - {payload}")
+            return False
+        except Exception as e:
+            print(f"[Manhastro] Erro no login: {e}")
+            return False
 
     def getManga(self, link: str) -> Manga:
-        try:
-            browser = _get_shared_browser()
-            tab = browser.new_tab()
-            
-            tab.get(link)
-            time.sleep(3)  # Aguarda carregamento
-            response = tab.html
-            soup = BeautifulSoup(response, 'html.parser')
-            
-            # Tenta múltiplos seletores para maior compatibilidade
-            data = soup.select(self.query_title_for_uri)           
-            element = data.pop()
-            title = element['content'].strip() if 'content' in element.attrs else element.text.strip()
-                
-            print(f"Título encontrado: {title}")
-            return Manga(id=link, name=title)
-            
-        except Exception as e:
-            print(f"Erro ao obter manga: {e}")
-            raise
-        finally:
-            try:
-                tab.close()
-            except:
-                pass
+        manga_id = self._extract_manga_id(link)
+        title = None
+
+        if manga_id:
+            title = self._get_manga_title_by_id(manga_id)
+
+        if not title:
+            response = requests.get(link, timeout=self.timeout)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            title = self._extract_title(soup)
+            if not manga_id:
+                placeholder = soup.select_one(self.query_placeholder)
+                if placeholder:
+                    manga_id = placeholder.get('data-id')
+
+        if not manga_id:
+            manga_id = link
+
+        return Manga(id=str(manga_id), name=title)
     
     def getChapters(self, id: str) -> List[Chapter]:
         try:
-            browser = _get_shared_browser()
-            tab = browser.new_tab()
-            
-            uri = urljoin(self.url, id)
-            tab.get(uri)
-            time.sleep(2)
-            
-            response = tab.html
-            soup = BeautifulSoup(response, 'html.parser')
-            data = soup.select(self.query_title_for_uri)
-            element = data.pop()
-            title = element['content'].strip() if 'content' in element.attrs else element.text.strip()
-            dom = soup.select('body')[0]
-            data = dom.select(self.query_chapters)
+            if not self.access_token and not self.login():
+                return []
 
+            manga_id = self._extract_manga_id(str(id))
+            if not manga_id:
+                return []
+
+            title = self._get_manga_title_by_id(manga_id) or f'Manga {manga_id}'
+
+            response = requests.get(
+                f'{self.api_base}/dados/{manga_id}',
+                headers=self._auth_headers(),
+                timeout=self.timeout
+            )
+
+            if response.status_code in [401, 403] and self.login(force=True):
+                response = requests.get(
+                    f'{self.api_base}/dados/{manga_id}',
+                    headers=self._auth_headers(),
+                    timeout=self.timeout
+                )
+
+            payload = response.json()
+            data = payload.get('data', []) if isinstance(payload, dict) else []
             chs = []
-            for el in data:
-                ch_id = self.get_root_relative_or_absolute_link(el, uri)
-                # Busca especificamente pelo span que contém o nome do capítulo
-                chapter_span = el.select_one('span.text-white')
-                if chapter_span:
-                    ch_number = chapter_span.text.strip()
-                else:
-                    # Fallback: pega o primeiro texto encontrado no elemento
-                    ch_number = el.text.strip().split('\n')[0].strip()
-                ch_name = title
-                chs.append(Chapter(ch_id, ch_number, ch_name))
-
-            chs.reverse()
+            for chapter in data:
+                capitulo_id = chapter.get('capitulo_id')
+                capitulo_nome = chapter.get('capitulo_nome') or f'Capitulo {capitulo_id}'
+                if capitulo_id is None:
+                    continue
+                chs.append(Chapter(str(capitulo_id), capitulo_nome, title))
             return chs
         except Exception as e:
             print(f"Erro ao obter capítulos: {e}")
             return []
-        finally:
-            try:
-                tab.close()
-            except:
-                pass
 
     def getPages(self, ch: Chapter) -> Pages:
-        """Pega páginas usando aba compartilhada no navegador principal com retry"""
-        browser = _get_shared_browser()
-        max_retries = 10
-        
-        for attempt in range(max_retries):
-            new_tab = None
-            try:
-                # Criar nova aba para esta requisição
-                new_tab = browser.new_tab()
-                
-                uri = urljoin(self.url, ch.id)
-                print(f"Tentativa {attempt + 1}/{max_retries} - Buscando páginas para: {ch.name}")
-                
-                new_tab.get(uri)
-                time.sleep(2*(attempt+1))  # Espera progressiva
-                
-                # Usar a nova aba para extrair dados
-                response = new_tab.html
-                soup = BeautifulSoup(response, 'html.parser')
-                data = soup.select(self.query_pages)
-                
-                pages_list = [] 
-                for el in data:
-                    src = el.get("src")
-                    if src:
+        try:
+            if not self.access_token and not self.login():
+                return Pages(ch.id, ch.number, ch.name, [])
+
+            chapter_id = self._extract_manga_id(str(ch.id))
+            if not chapter_id:
+                return Pages(ch.id, ch.number, ch.name, [])
+
+            response = requests.get(
+                f'{self.api_base}/paginas/{chapter_id}',
+                headers=self._auth_headers(),
+                timeout=self.timeout
+            )
+
+            if response.status_code in [401, 403] and self.login(force=True):
+                response = requests.get(
+                    f'{self.api_base}/paginas/{chapter_id}',
+                    headers=self._auth_headers(),
+                    timeout=self.timeout
+                )
+
+            raw = response.text.strip()
+            if raw.startswith('_'):
+                raw = raw[1:]
+            payload = json.loads(raw) if raw else {}
+            data = payload.get('data', {}) if isinstance(payload, dict) else {}
+            pages_list = []
+
+            if isinstance(data, dict) and isinstance(data.get('chapter'), dict):
+                chapter_data = data.get('chapter', {})
+                base_url = str(chapter_data.get('baseUrl', '')).strip()
+                chapter_hash = str(chapter_data.get('hash', '')).strip('/')
+                files = chapter_data.get('data', [])
+
+                if base_url.startswith('//'):
+                    base_url = f'https:{base_url}'
+                if base_url.startswith('/'):
+                    base_url = urljoin(self.url, base_url)
+
+                if isinstance(files, list):
+                    for file_name in files:
+                        if not file_name:
+                            continue
+                        normalized_name = str(file_name).lstrip('/')
+                        src = f"{base_url.rstrip('/')}/{chapter_hash}/{normalized_name}"
                         pages_list.append(src)
 
-                # Se encontrou páginas, retorna sucesso
-                if pages_list:
-                    number = re.findall(r'\d+\.?\d*', str(ch.number))[0]
-                    print(f"✅ Sucesso: {len(pages_list)} páginas para {ch.name}")
-                    return Pages(ch.id, number, ch.name, pages_list)
-                else:
-                    print(f"⚠️ Tentativa {attempt + 1}: Nenhuma página encontrada para {ch.name}")
-                    
-            except Exception as e:
-                print(f"❌ Tentativa {attempt + 1} falhou para {ch.name}: {e}")
-                
-            finally:
-                # Fechar aba da tentativa atual
-                if new_tab:
-                    try:
-                        new_tab.close()
-                        print(f"Aba fechada (tentativa {attempt + 1})")
-                    except Exception as e:
-                        print(f"Erro ao fechar aba: {e}")
-            
-            # Se não é a última tentativa, aguarda antes de tentar novamente
-            if attempt < max_retries - 1:
-                wait_time = (attempt + 1) * 2  # 2s, 4s, 6s progressivamente
-                time.sleep(wait_time)
-        
-        # Se chegou aqui, todas as tentativas falharam
-        print(f"💥 Todas as {max_retries} tentativas falharam para {ch.name}")
-        return Pages(ch.id, ch.number, ch.name, [])
+            # Fallback para formato legado já tratado anteriormente.
+            if not pages_list:
+                paginas = data.get('paginas', {}) if isinstance(data, dict) else {}
+                for key in sorted(paginas.keys(), key=lambda x: int(x) if str(x).isdigit() else str(x)):
+                    src = paginas.get(key)
+                    if not src:
+                        continue
+                    if src.startswith('//'):
+                        src = f'https:{src}'
+                    elif src.startswith('/'):
+                        src = urljoin(self.url, src)
+                    pages_list.append(src)
+
+            number_match = re.findall(r'\d+\.?\d*', str(ch.number))
+            number = number_match[0] if number_match else str(ch.number)
+            return Pages(ch.id, number, ch.name, pages_list)
+        except Exception as e:
+            print(f"Erro ao obter páginas: {e}")
+            return Pages(ch.id, ch.number, ch.name, [])
     
     def adjust_template_size(self, template, img):
         try:
