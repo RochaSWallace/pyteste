@@ -1,6 +1,5 @@
 from typing import List
 from urllib.parse import parse_qs, urljoin, urlparse
-
 from core.__seedwork.infra.http import Http
 from core.download.application.use_cases import DownloadUseCase
 from core.providers.domain.entities import Chapter, Manga, Pages
