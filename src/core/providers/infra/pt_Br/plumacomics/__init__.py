@@ -76,6 +76,43 @@ class PlumaComicsProvider(WordpressEtoshoreMangaTheme):
     def getPages(self, ch: Chapter) -> Pages:
         response = Http.get(ch.id)
         soup = BeautifulSoup(response.content, 'html.parser')
+
+        url = "https://plumacomics.cloud/ler/4240"
+
+        headers = {
+            "accept": "text/x-component",
+            "accept-language": "pt-BR,pt;q=0.5",
+            "content-type": "text/plain;charset=UTF-8",
+            "next-action": "701f79178337beef3c2f84e556d2d0af98ccd4287c",
+            "next-router-state-tree": (
+                "%5B%22%22%2C%7B%22children%22%3A%5B%22ler%22%2C%7B%22children%22%3A"
+                "%5B%5B%22id%22%2C%224240%22%2C%22d%22%5D%2C%7B%22children%22%3A%5B%22"
+                "__PAGE__%22%2C%7B%7D%2Cnull%2Cnull%5D%7D%2Cnull%2Cnull%5D%7D%2Cnull%2C"
+                "null%5D%7D%2Cnull%2Cnull%2Ctrue%5D"
+            ),
+            "sec-ch-ua": '"Not:A-Brand";v="99", "Brave";v="145", "Chromium";v="145"',
+            "sec-ch-ua-arch": '""',
+            "sec-ch-ua-bitness": '"64"',
+            "sec-ch-ua-full-version-list": (
+                '"Not:A-Brand";v="99.0.0.0", "Brave";v="145.0.0.0", "Chromium";v="145.0.0.0"'
+            ),
+            "sec-ch-ua-mobile": "?1",
+            "sec-ch-ua-model": '"Nexus 5"',
+            "sec-ch-ua-platform": '"Android"',
+            "sec-ch-ua-platform-version": '"6.0"',
+            "sec-fetch-dest": "empty",
+            "sec-fetch-mode": "cors",
+            "sec-fetch-site": "same-origin",
+            "sec-gpc": "1",
+            "referer": "https://plumacomics.cloud/ler/4240",
+        }
+
+        body = "[4240,1]"
+
+        temp = Http.post(url, headers=headers, data=body)
+        ter = BeautifulSoup(temp.content, 'html.parser')
+        print(f"Response:\n{temp.text}")
+        
         
         # Busca o container de páginas
         div_pages = soup.select_one(self.get_div_page)
@@ -89,6 +126,7 @@ class PlumaComicsProvider(WordpressEtoshoreMangaTheme):
         
         for img in images:
             src = img.get('src')
+            print(f"Encontrada imagem: {src}")
             if not src:
                 continue
             

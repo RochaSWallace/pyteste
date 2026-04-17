@@ -295,6 +295,9 @@ class KuromangasProvider(Base):
         self.cdn = 'https://cdn.kuromangas.com'
         self.domain_name = 'beta.kuromangas.com'
         self.access_token = None
+        self.expected_crypto_version = 'v7.2'
+        self._crypto_retry_count = 0
+        self._crypto_retry_limit = 3
         self.headers = {
             "accept": "application/json, text/plain, */*",
             "accept-language": "pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7",
@@ -305,22 +308,19 @@ class KuromangasProvider(Base):
         }
         self._load_token()
 
-    def _gerar_chave_descriptografia(self) -> str:
+    def _gerar_chave_descriptografia(self, identificador: str = 'x9_4v2_b') -> str:
         """
         Gera a chave de descriptografia dinâmica do KuroMangas.
         CORRIGIDO: base_key correta extraída do JavaScript
         """
         # CHAVE CORRETA do JavaScript!
-        base_key = "53to8l674shjk6sjsksdfE2oMwkajkun9TuYTudsWIF4jeKdqEwhUEft97879147pasd235as"
+        base_key = "5ato8l674shksfE2oMwajkun9TuYTusF4jKdqEwhUEft9787147pasd235ask"
         
         # Data atual no formato ISO (YYYY-MM-DD)
         data_atual = datetime.now().strftime("%Y-%m-%d")
         
         # Hostname com ::v2
-        hostname_v2 = "beta.kuromangas.com::v2"
-        
-        # Identificador (no Python sempre usamos "x9_4v2_b")
-        identificador = "x9_4v2_b"
+        hostname_v2 = f"{self.domain_name}::v2"
         
         # MD5(data + hostname + identificador)[:8]
         hash_input = data_atual + hostname_v2 + identificador
@@ -330,30 +330,44 @@ class KuromangasProvider(Base):
         chave_final = base_key + md5_suffix
         return chave_final
 
-    def _descriptografar_rabbit(self, encrypted_data: str) -> dict:
+    def _descriptografar_rabbit(self, encrypted_data: str, data_key: str = None) -> dict:
         """Descriptografa dados usando Rabbit cipher"""
+        decrypted_str = ''
         try:
-            chave = self._gerar_chave_descriptografia()
-            print(f"[Kuromangas] 🔑 Chave: {chave[:40]}...{chave[-12:]}")
-            
-            decrypted_str = cryptojs_rabbit_decrypt(encrypted_data, chave)
-            
-            if not decrypted_str or not decrypted_str.strip():
-                print("[Kuromangas] ⚠️ Resultado vazio")
+            decrypted_json = None
+            for identificador in ('x9_4v2_b', 'bot'):
+                try:
+                    chave = self._gerar_chave_descriptografia(identificador=identificador)
+                    decrypted_str = cryptojs_rabbit_decrypt(encrypted_data, chave)
+                    if not decrypted_str or not decrypted_str.strip():
+                        continue
+
+                    # Encontra JSON válido
+                    start = decrypted_str.find('{')
+                    end = decrypted_str.rfind('}') + 1
+                    if start >= 0 and end > start:
+                        json_str = decrypted_str[start:end]
+                        decrypted_json = json.loads(json_str)
+                    else:
+                        decrypted_json = json.loads(decrypted_str)
+
+                    print(f"[Kuromangas] 🔑 Decrypt OK com identificador: {identificador}")
+                    break
+                except Exception:
+                    continue
+
+            if not decrypted_json:
+                print("[Kuromangas] ⚠️ Não foi possível descriptografar com os identificadores conhecidos")
                 return {}
             
-            # Encontra JSON válido
-            start = decrypted_str.find('{')
-            end = decrypted_str.rfind('}') + 1
-            
-            if start >= 0 and end > start:
-                json_str = decrypted_str[start:end]
-                decrypted_json = json.loads(json_str)
-            else:
-                decrypted_json = json.loads(decrypted_str)
-            
             if '_wrapped' in decrypted_json:
-                return decrypted_json['_wrapped']
+                decrypted_json = decrypted_json['_wrapped']
+
+            if data_key and isinstance(decrypted_json, dict) and data_key in decrypted_json:
+                decrypted_json = decrypted_json[data_key]
+
+            if isinstance(decrypted_json, dict) and '_v_secure' in decrypted_json:
+                del decrypted_json['_v_secure']
             
             return decrypted_json
             
@@ -371,20 +385,34 @@ class KuromangasProvider(Base):
     def _processar_resposta_api(self, response) -> dict:
         """Processa resposta da API"""
         try:
+            crypto_version = response.headers.get('x-crypto-version')
+            if crypto_version and self.expected_crypto_version and crypto_version != self.expected_crypto_version:
+                self._crypto_retry_count += 1
+                print(
+                    f"[Kuromangas] ⚠️ Versão de criptografia mudou: {crypto_version} "
+                    f"(esperada: {self.expected_crypto_version})"
+                )
+                if self._crypto_retry_count <= self._crypto_retry_limit:
+                    print("[Kuromangas] 🔄 Tentando renovar sessão por mudança de versão...")
+                    self.login(force=True)
+            else:
+                self._crypto_retry_count = 0
+
             data = response.json()
+            data_key = response.headers.get('x-kuro-datakey')
             
             if '_v_secure' in data:
                 encrypted_data = data.get('_v_secure', '')
                 if encrypted_data:
                     print("[Kuromangas] 🔐 Formato _v_secure detectado")
-                    return self._descriptografar_rabbit(encrypted_data)
+                    return self._descriptografar_rabbit(encrypted_data, data_key=data_key)
                 return {}
             
             elif '_r_data' in data and '_auth' in data:
                 encrypted_data = data.get('_r_data', '')
                 if encrypted_data:
                     print("[Kuromangas] 🔐 Formato _r_data detectado")
-                    return self._descriptografar_rabbit(encrypted_data)
+                    return self._descriptografar_rabbit(encrypted_data, data_key=data_key)
                 return {}
             
             return data
@@ -419,7 +447,7 @@ class KuromangasProvider(Base):
         try:
             response = requests.post(
                 f'{self.api_base}/auth/login',
-                data=json.dumps({"email": "opai@gmail.com", "password": "Opai@123"}),
+                data=json.dumps({"email": "opai25.br@gmail.com", "password": "Opai@123"}),
                 headers=self.headers,
                 timeout=15
             )
