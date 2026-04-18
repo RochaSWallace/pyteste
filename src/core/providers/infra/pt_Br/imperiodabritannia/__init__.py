@@ -3,8 +3,6 @@ from __future__ import annotations
 import json
 import os
 import re
-from datetime import datetime
-from zoneinfo import ZoneInfo
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -137,17 +135,6 @@ class ImperiodabritanniaProvider(Base):
         if '/obra/' in cleaned:
             return cleaned.split('/obra/')[-1].split('/')[0]
         return cleaned.split('/')[-1]
-
-    def _to_seconds_from_iso(self, value: str) -> int:
-        if not value:
-            return 86400
-        try:
-            dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
-            now = datetime.now(ZoneInfo('UTC'))
-            delta = int((now - dt.astimezone(ZoneInfo('UTC'))).total_seconds())
-            return delta if delta >= 0 else 3600
-        except Exception:
-            return 86400
 
     def _chapter_api_number(self, numero: str) -> str:
         if numero is None:
